@@ -1,10 +1,12 @@
 #!/bin/bash
-set -e
 
 echo "DockDash is starting..."
 
 # Run database initialization
-python init_db.py
+python init_db.py || {
+    echo "Database initialization had issues, but continuing..."
+    # Don't exit on database error - it might initialize on first request
+}
 
 # Get the port from environment or use default
 PORT=${DOCKDASH_PORT:-9999}

@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   dockdash:
     build: .
@@ -15,4 +13,5 @@ services:
       - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
       - DEFAULT_USERNAME=${DEFAULT_USERNAME:-admin}
       - DEFAULT_PASSWORD=${DEFAULT_PASSWORD:-dockdash}
+      - DOCKDASH_PORT=${DOCKDASH_PORT:-9999}
     restart: unless-stopped
