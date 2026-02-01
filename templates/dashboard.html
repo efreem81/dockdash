@@ -121,12 +121,18 @@
 
                 {% if container.ports %}
                 <div class="container-ports">
-                    <h4>🔌 Ports & URLs</h4>
+                    <h4>🔗 Links</h4>
                     {% for port in container.ports %}
                     <div class="port-item">
-                        <span class="port-mapping">{{ port.container_port }} → {{ port.host_port }}</span>
-                        <a href="{{ port.url }}" target="_blank" class="port-link" title="Open in new tab">
-                            {{ port.url }} 🔗
+                        <a href="{{ port.url }}"
+                           target="_blank"
+                           rel="noopener noreferrer"
+                           class="port-link probe-link"
+                           data-host="{{ host_ip }}"
+                           data-port="{{ port.host_port }}"
+                           data-container-port="{{ port.container_port }}"
+                           title="Open in new tab">
+                            <span class="link-scheme">http</span> :{{ port.host_port }}
                         </a>
                     </div>
                     {% endfor %}
@@ -150,6 +156,9 @@
                         ▶️ Start
                     </button>
                     {% endif %}
+                    <button class="btn btn-secondary btn-sm" onclick="openLogs('{{ container.id }}', '{{ container.name }}')">
+                        📜 Logs
+                    </button>
                 </div>
             </div>
             {% endfor %}
@@ -181,7 +190,6 @@
                     <th class="sortable" data-sort="image" onclick="sortByColumn('image')">
                         Image <span class="sort-icon" id="sort-image">↕</span>
                     </th>
-                    <th>Ports</th>
                     <th>Links</th>
                     <th>Actions</th>
                 </tr>
@@ -201,20 +209,18 @@
                         <span class="status-badge status-{{ container.status }}">{{ container.status }}</span>
                     </td>
                     <td class="cell-image">{{ container.image }}</td>
-                    <td class="cell-ports">
-                        {% if container.ports %}
-                            {% for port in container.ports %}
-                                <span class="port-badge">{{ port.host_port }}</span>
-                            {% endfor %}
-                        {% else %}
-                            <span class="no-ports-badge">—</span>
-                        {% endif %}
-                    </td>
                     <td class="cell-links">
                         {% if container.ports %}
                             {% for port in container.ports %}
-                                <a href="{{ port.url }}" target="_blank" class="table-link" title="{{ port.url }}">
-                                    :{{ port.host_port }} 🔗
+                                <a href="{{ port.url }}"
+                                   target="_blank"
+                                   rel="noopener noreferrer"
+                                   class="table-link probe-link"
+                                   data-host="{{ host_ip }}"
+                                   data-port="{{ port.host_port }}"
+                                   data-container-port="{{ port.container_port }}"
+                                   title="Open in new tab">
+                                    <span class="link-scheme">http</span> :{{ port.host_port }}
                                 </a>
                             {% endfor %}
                         {% else %}
@@ -234,6 +240,9 @@
                             ▶️
                         </button>
                         {% endif %}
+                        <button class="btn btn-secondary btn-xs" onclick="openLogs('{{ container.id }}', '{{ container.name }}')" title="Logs">
+                            📜
+                        </button>
                     </td>
                 </tr>
                 {% endfor %}
@@ -251,6 +260,34 @@
                 <p>{% if show_all %}There are no Docker containers on this host.{% else %}There are no running containers. Toggle "Show stopped containers" to see all.{% endif %}</p>
             </div>
         {% endif %}
+    </div>
+
+    <!-- Logs modal -->
+    <div class="modal-overlay" id="logsModal" style="display: none;" onclick="closeLogs(event)">
+        <div class="modal" role="dialog" aria-modal="true" aria-label="Container logs" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <div class="modal-title" id="logsTitle">📜 Logs</div>
+                <button class="modal-close" onclick="closeLogs()" aria-label="Close">×</button>
+            </div>
+            <div class="modal-toolbar">
+                <label class="checkbox-inline">
+                    <input type="checkbox" id="logsFollow" checked>
+                    Follow
+                </label>
+                <label class="modal-field">
+                    Tail
+                    <select id="logsTail">
+                        <option value="100">100</option>
+                        <option value="200" selected>200</option>
+                        <option value="500">500</option>
+                        <option value="1000">1000</option>
+                    </select>
+                </label>
+                <button class="btn btn-secondary btn-sm" onclick="refreshLogs()">🔄 Refresh</button>
+                <button class="btn btn-secondary btn-sm" onclick="copyLogs()">📋 Copy</button>
+            </div>
+            <pre class="logs-output" id="logsOutput">Loading…</pre>
+        </div>
     </div>
 
     <!-- Bottom pagination -->
@@ -315,6 +352,9 @@ document.addEventListener('DOMContentLoaded', function() {
     filteredContainers = [...allContainers];
     applySort();
     renderContainers();
+
+    // Probe visible links to upgrade http -> https where appropriate
+    scheduleProbeVisibleLinks();
     
     // Setup search input
     const searchInput = document.getElementById('searchInput');
@@ -373,6 +413,7 @@ function setView(view) {
     }
     localStorage.setItem('dockdash-view', view);
     renderContainers();
+    scheduleProbeVisibleLinks();
 }
 
 // Search functionality
@@ -570,6 +611,9 @@ function renderContainers() {
     }
     
     updateSortIcons();
+
+    // Probe visible links after pagination/filtering changes
+    scheduleProbeVisibleLinks();
 }
 
 // Existing functionality
@@ -580,6 +624,138 @@ document.getElementById('showAllToggle').addEventListener('change', function() {
 
 function refreshContainers() {
     location.reload();
+}
+
+// Link probing (HTTP vs HTTPS)
+let _probeQueueTimer = null;
+let _probeInFlight = 0;
+const _probeMaxConcurrency = 6;
+const _probeSeen = new Map();
+
+function scheduleProbeVisibleLinks() {
+    if (_probeQueueTimer) clearTimeout(_probeQueueTimer);
+    _probeQueueTimer = setTimeout(runProbeQueue, 150);
+}
+
+function runProbeQueue() {
+    const visibleLinks = Array.from(document.querySelectorAll('.probe-link'))
+        .filter(a => a.offsetParent !== null);
+
+    for (const a of visibleLinks) {
+        const host = a.dataset.host;
+        const port = a.dataset.port;
+        if (!host || !port) continue;
+        const key = `${host}:${port}`;
+        if (_probeSeen.get(key)) continue;
+        _probeSeen.set(key, true);
+        enqueueProbe(a, host, port);
+    }
+}
+
+function enqueueProbe(anchorEl, host, port) {
+    const attempt = async () => {
+        if (_probeInFlight >= _probeMaxConcurrency) {
+            setTimeout(attempt, 100);
+            return;
+        }
+        _probeInFlight += 1;
+        try {
+            const resp = await fetch(`/api/link/probe?host=${encodeURIComponent(host)}&port=${encodeURIComponent(port)}`);
+            const data = await resp.json();
+            if (data && data.success && data.url) {
+                anchorEl.href = data.url;
+                const schemeEl = anchorEl.querySelector('.link-scheme');
+                if (schemeEl) schemeEl.textContent = data.scheme === 'https' ? 'https' : 'http';
+                if (data.scheme === 'https') {
+                    anchorEl.classList.add('is-https');
+                }
+            }
+        } catch (e) {
+            // Leave as default http
+        } finally {
+            _probeInFlight -= 1;
+        }
+    };
+    attempt();
+}
+
+// Logs viewer
+let _logsContainerId = null;
+let _logsContainerName = null;
+let _logsInterval = null;
+
+function openLogs(id, name) {
+    _logsContainerId = id;
+    _logsContainerName = name;
+    document.getElementById('logsTitle').textContent = `📜 Logs — ${name}`;
+    document.getElementById('logsOutput').textContent = 'Loading…';
+    document.getElementById('logsModal').style.display = 'flex';
+    refreshLogs();
+    startLogsFollow();
+}
+
+function closeLogs(e) {
+    if (e && e.target && e.target.id !== 'logsModal') return;
+    document.getElementById('logsModal').style.display = 'none';
+    stopLogsFollow();
+    _logsContainerId = null;
+    _logsContainerName = null;
+}
+
+function startLogsFollow() {
+    stopLogsFollow();
+    const follow = document.getElementById('logsFollow');
+    if (!follow || !follow.checked) return;
+    _logsInterval = setInterval(() => {
+        const modalVisible = document.getElementById('logsModal').style.display !== 'none';
+        if (!modalVisible) return;
+        refreshLogs(true);
+    }, 2000);
+}
+
+function stopLogsFollow() {
+    if (_logsInterval) {
+        clearInterval(_logsInterval);
+        _logsInterval = null;
+    }
+}
+
+document.addEventListener('change', function(e) {
+    if (e.target && e.target.id === 'logsFollow') {
+        startLogsFollow();
+    }
+});
+
+async function refreshLogs(silent = false) {
+    if (!_logsContainerId) return;
+    const tail = document.getElementById('logsTail')?.value || '200';
+    try {
+        const resp = await fetch(`/api/container/${_logsContainerId}/logs?tail=${encodeURIComponent(tail)}&timestamps=1`);
+        const data = await resp.json();
+        if (!data.success) {
+            document.getElementById('logsOutput').textContent = data.error || 'Failed to load logs';
+            return;
+        }
+        const out = document.getElementById('logsOutput');
+        const wasNearBottom = out.scrollTop + out.clientHeight >= out.scrollHeight - 40;
+        out.textContent = data.logs || '';
+        if (silent && !wasNearBottom) return;
+        out.scrollTop = out.scrollHeight;
+    } catch (err) {
+        if (!silent) {
+            document.getElementById('logsOutput').textContent = 'Failed to load logs';
+        }
+    }
+}
+
+async function copyLogs() {
+    const text = document.getElementById('logsOutput').textContent || '';
+    try {
+        await navigator.clipboard.writeText(text);
+        showToast('success', 'Logs copied to clipboard');
+    } catch (e) {
+        showToast('error', 'Failed to copy logs');
+    }
 }
 
 function getCsrfToken() {
@@ -601,7 +777,8 @@ async function restartContainer(id, name) {
         
         if (data.success) {
             showToast('success', data.message);
-            setTimeout(() => location.reload(), 1500);
+            await waitForContainerStatus(id, ['running'], 8000);
+            location.reload();
         } else {
             showToast('error', data.error);
         }
@@ -619,7 +796,8 @@ async function stopContainer(id, name) {
         
         if (data.success) {
             showToast('success', data.message);
-            setTimeout(() => location.reload(), 1500);
+            await waitForContainerStatus(id, ['exited', 'stopped'], 8000);
+            location.reload();
         } else {
             showToast('error', data.error);
         }
@@ -637,13 +815,36 @@ async function startContainer(id, name) {
         
         if (data.success) {
             showToast('success', data.message);
-            setTimeout(() => location.reload(), 1500);
+            await waitForContainerStatus(id, ['running'], 8000);
+            location.reload();
         } else {
             showToast('error', data.error);
         }
     } catch (error) {
         showToast('error', 'Failed to start container');
     }
+}
+
+async function waitForContainerStatus(id, expectedStatuses, maxMs) {
+    const start = Date.now();
+    const showAll = document.getElementById('showAllToggle')?.checked ? 'true' : 'false';
+    while ((Date.now() - start) < maxMs) {
+        try {
+            const resp = await fetch(`/api/containers?show_all=${showAll}`);
+            const containers = await resp.json();
+            const c = (containers || []).find(x => x.id === id);
+            if (!c) {
+                // If container is gone (e.g., stopped and show_all=false), treat as done.
+                if (!showAll) return true;
+            } else if (expectedStatuses.includes(c.status)) {
+                return true;
+            }
+        } catch (e) {
+            // ignore
+        }
+        await new Promise(r => setTimeout(r, 800));
+    }
+    return false;
 }
 </script>
 {% endblock %}

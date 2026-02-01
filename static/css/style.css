@@ -1150,6 +1150,24 @@ a:hover {
     color: white;
 }
 
+.link-scheme {
+    display: inline-block;
+    min-width: 3.1ch;
+    padding: 0.05rem 0.35rem;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: lowercase;
+    background: rgba(59, 130, 246, 0.12);
+    color: var(--primary-dark);
+    margin-right: 0.35rem;
+}
+
+.probe-link.is-https .link-scheme {
+    background: rgba(16, 185, 129, 0.16);
+    color: var(--success-color);
+}
+
 .container-table .cell-actions {
     display: inline-flex;
     gap: 0.25rem;
@@ -1208,6 +1226,104 @@ a:hover {
     .header-actions {
         flex-wrap: wrap;
     }
+}
+
+/* =============================================================================
+   Logs Modal
+   ============================================================================= */
+
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(15, 23, 42, 0.65);
+    backdrop-filter: blur(6px);
+    z-index: 1000;
+    padding: 1rem;
+}
+
+.modal {
+    width: min(1100px, 95vw);
+    height: min(720px, 85vh);
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    background: linear-gradient(135deg, var(--secondary-color) 0%, var(--primary-dark) 100%);
+    color: white;
+}
+
+.modal-title {
+    font-weight: 700;
+}
+
+.modal-close {
+    border: none;
+    background: transparent;
+    color: white;
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+}
+
+.modal-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid var(--border-color);
+    background: rgba(148, 163, 184, 0.08);
+    flex-wrap: wrap;
+}
+
+.checkbox-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--text-color);
+    font-size: 0.9rem;
+}
+
+.modal-field {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--text-color);
+    font-size: 0.9rem;
+}
+
+.modal-field select {
+    padding: 0.25rem 0.4rem;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background: var(--card-bg);
+    color: var(--text-color);
+}
+
+.logs-output {
+    margin: 0;
+    padding: 1rem;
+    height: 100%;
+    overflow: auto;
+    background: #0b1220;
+    color: #d1d5db;
+    font-family: 'Monaco', 'Consolas', monospace;
+    font-size: 0.8rem;
+    line-height: 1.3;
+    white-space: pre;
 }
 
 /* =============================================================================

@@ -7,6 +7,11 @@ from flask_login import LoginManager, UserMixin, login_user, logout_user, login_
 from flask_wtf.csrf import CSRFProtect, CSRFError
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
+from sqlalchemy import text
+import time
+import socket
+import ssl
+import requests
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -151,7 +156,9 @@ def get_container_info(container):
                     port_info = {
                         'container_port': container_port,
                         'host_port': host_port,
-                        'url': f"http://{host_ip}:{host_port}"
+                        # Default URL is http; UI may probe and upgrade to https.
+                        'url': f"http://{host_ip}:{host_port}",
+                        'host_ip': host_ip
                     }
                     info['ports'].append(port_info)
                     info['urls'].append(port_info['url'])
@@ -170,6 +177,86 @@ def get_all_containers(show_all=False):
     except Exception as e:
         print(f"Error getting containers: {e}")
         return []
+
+
+# =============================================================================
+# Link Probing (HTTP vs HTTPS)
+# =============================================================================
+
+_probe_cache = {}
+
+
+def _cache_get(key, ttl_seconds: int):
+    entry = _probe_cache.get(key)
+    if not entry:
+        return None
+    ts, value = entry
+    if (time.time() - ts) > ttl_seconds:
+        _probe_cache.pop(key, None)
+        return None
+    return value
+
+
+def _cache_set(key, value):
+    _probe_cache[key] = (time.time(), value)
+
+
+def _tls_handshake_ok(host: str, port: int, timeout: float = 1.5) -> bool:
+    """True if a TLS handshake succeeds (openssl s_client-style check)."""
+    try:
+        raw_sock = socket.create_connection((host, port), timeout=timeout)
+        try:
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            tls_sock = ctx.wrap_socket(raw_sock, server_hostname=host)
+            try:
+                tls_sock.do_handshake()
+                return True
+            finally:
+                try:
+                    tls_sock.close()
+                except Exception:
+                    pass
+        finally:
+            try:
+                raw_sock.close()
+            except Exception:
+                pass
+    except Exception:
+        return False
+
+
+def _http_ok(host: str, port: int, timeout: float = 1.5) -> bool:
+    """True if an HTTP request returns any valid response (curl-style check)."""
+    url = f"http://{host}:{port}"
+    try:
+        # Prefer HEAD, fall back to GET if not allowed.
+        r = requests.head(url, timeout=timeout, allow_redirects=True)
+        return True if r is not None else False
+    except Exception:
+        try:
+            r = requests.get(url, timeout=timeout, allow_redirects=True, stream=True)
+            return True if r is not None else False
+        except Exception:
+            return False
+
+
+def probe_scheme(host: str, port: int) -> str:
+    """Return 'https', 'http', or 'unknown' for host:port."""
+    cache_key = f"{host}:{port}"
+    cached = _cache_get(cache_key, ttl_seconds=60)
+    if cached:
+        return cached
+
+    scheme = 'unknown'
+    if _tls_handshake_ok(host, port):
+        scheme = 'https'
+    elif _http_ok(host, port):
+        scheme = 'http'
+
+    _cache_set(cache_key, scheme)
+    return scheme
 
 
 def init_default_user():
@@ -321,6 +408,84 @@ def start_container(container_id):
         return jsonify({'success': False, 'error': 'Container not found'}), 404
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/container/<container_id>/logs')
+@login_required
+def container_logs(container_id):
+    if not docker_client:
+        return jsonify({'success': False, 'error': 'Docker not available'}), 500
+
+    tail = request.args.get('tail', '200')
+    timestamps = request.args.get('timestamps', '1') == '1'
+    try:
+        tail_n = max(1, min(2000, int(tail)))
+    except Exception:
+        tail_n = 200
+
+    try:
+        container = docker_client.containers.get(container_id)
+        logs = container.logs(tail=tail_n, timestamps=timestamps)
+        if isinstance(logs, (bytes, bytearray)):
+            logs_text = logs.decode('utf-8', errors='replace')
+        else:
+            logs_text = str(logs)
+        return jsonify({'success': True, 'container': container.name, 'logs': logs_text})
+    except docker.errors.NotFound:
+        return jsonify({'success': False, 'error': 'Container not found'}), 404
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/link/probe')
+@login_required
+def api_probe_link():
+    """Probe a host:port and return whether https or http responds.
+
+    LAN safety: restrict probing to the configured host IP only.
+    """
+    host = (request.args.get('host') or '').strip()
+    port_raw = (request.args.get('port') or '').strip()
+
+    try:
+        port = int(port_raw)
+    except Exception:
+        return jsonify({'success': False, 'error': 'Invalid port'}), 400
+
+    if port < 1 or port > 65535:
+        return jsonify({'success': False, 'error': 'Invalid port'}), 400
+
+    allowed_hosts = {get_host_ip(), 'localhost', '127.0.0.1'}
+    if host not in allowed_hosts:
+        return jsonify({'success': False, 'error': 'Host not allowed'}), 400
+
+    scheme = probe_scheme(host, port)
+    if scheme == 'https':
+        url = f"https://{host}:{port}"
+    else:
+        url = f"http://{host}:{port}"
+
+    return jsonify({'success': True, 'scheme': scheme, 'url': url, 'host': host, 'port': port})
+
+
+@app.route('/health')
+def health():
+    """Lightweight health endpoint for LAN monitoring."""
+    docker_ok = docker_client is not None
+    db_ok = False
+    try:
+        db.session.execute(text('SELECT 1'))
+        db_ok = True
+    except Exception:
+        db_ok = False
+
+    status = 'ok' if db_ok else 'degraded'
+    return jsonify({
+        'status': status,
+        'docker_available': docker_ok,
+        'database_ok': db_ok,
+        'timestamp': datetime.utcnow().isoformat() + 'Z'
+    })
 
 
 # =============================================================================
