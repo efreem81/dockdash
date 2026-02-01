@@ -207,7 +207,9 @@ def container_stats(container_id):
 **Impact:** Cannot manage multi-container applications as a stack
 
 #### 14. No Search/Filter Functionality
-**Impact:** Hard to find specific containers in environments with 50+ containers
+**Status:** ✅ Implemented (search + sort + pagination)
+
+**Notes:** The container dashboard now supports text search, sorting (including clickable table headers), and pagination/page-size controls to keep large fleets usable.
 
 #### 15. No Bulk Operations
 **Impact:** Must restart containers one at a time
@@ -318,7 +320,7 @@ def health():
 | Feature | Priority | Effort | Impact |
 |---------|----------|--------|--------|
 | Dark mode | 🟡 Medium | 1 day | Medium |
-| Search and filtering | 🔴 High | 2 days | High |
+| Search/sort/pagination (containers) | ✅ Done | — | High |
 | Keyboard shortcuts | 🟢 Low | 1 day | Low |
 | Drag-and-drop ordering | 🟢 Low | 2 days | Low |
 | Mobile app | 🟢 Low | 2 weeks | Low |
@@ -464,7 +466,7 @@ def health():
 
 2. **Performance Optimization**
    - Add Redis caching
-   - Implement pagination
+   - Implement server-side pagination where needed (URLs list + future API responses)
    - Lazy loading for large lists
    - Database query optimization
    - Frontend bundling/minification
@@ -510,7 +512,8 @@ touch config/security.py
 - [ ] Complete Phase 1 (Security)
 - [ ] Implement container logs viewer
 - [ ] Add resource usage metrics
-- [ ] Create search/filter functionality
+- [x] Container list search/sort/pagination (client-side)
+- [ ] Optional: server-side filtering/pagination API for very large fleets
 - [ ] Begin multi-user system
 
 ### Medium-term Goals (Next Quarter)

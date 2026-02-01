@@ -582,11 +582,21 @@ function refreshContainers() {
     location.reload();
 }
 
+function getCsrfToken() {
+    const el = document.querySelector('meta[name="csrf-token"]');
+    return el ? el.getAttribute('content') : null;
+}
+
+function csrfHeaders() {
+    const token = getCsrfToken();
+    return token ? { 'X-CSRFToken': token } : {};
+}
+
 async function restartContainer(id, name) {
     if (!confirm(`Are you sure you want to restart ${name}?`)) return;
     
     try {
-        const response = await fetch(`/api/container/${id}/restart`, { method: 'POST' });
+        const response = await fetch(`/api/container/${id}/restart`, { method: 'POST', headers: csrfHeaders() });
         const data = await response.json();
         
         if (data.success) {
@@ -604,7 +614,7 @@ async function stopContainer(id, name) {
     if (!confirm(`Are you sure you want to stop ${name}?`)) return;
     
     try {
-        const response = await fetch(`/api/container/${id}/stop`, { method: 'POST' });
+        const response = await fetch(`/api/container/${id}/stop`, { method: 'POST', headers: csrfHeaders() });
         const data = await response.json();
         
         if (data.success) {
@@ -622,7 +632,7 @@ async function startContainer(id, name) {
     if (!confirm(`Are you sure you want to start ${name}?`)) return;
     
     try {
-        const response = await fetch(`/api/container/${id}/start`, { method: 'POST' });
+        const response = await fetch(`/api/container/${id}/start`, { method: 'POST', headers: csrfHeaders() });
         const data = await response.json();
         
         if (data.success) {

@@ -1,14 +1,34 @@
 import os
+import secrets
 import docker
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from flask_wtf.csrf import CSRFProtect, CSRFError
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Initialize Flask app
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-me')
+
+# Secret key
+# Prefer an explicit SECRET_KEY (recommended), but never fall back to a known constant.
+_secret_key = os.environ.get('SECRET_KEY')
+if not _secret_key:
+    _secret_key = secrets.token_hex(32)
+    print("WARNING: SECRET_KEY not set; using a temporary random key (sessions will reset on restart).")
+app.config['SECRET_KEY'] = _secret_key
+
+# Session/cookie hardening (LAN-friendly defaults; enable SECURE cookies when behind HTTPS)
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = os.environ.get('SESSION_COOKIE_SAMESITE', 'Lax')
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE', '0') == '1'
+app.config['REMEMBER_COOKIE_HTTPONLY'] = True
+app.config['REMEMBER_COOKIE_SAMESITE'] = os.environ.get('REMEMBER_COOKIE_SAMESITE', 'Lax')
+app.config['REMEMBER_COOKIE_SECURE'] = os.environ.get('REMEMBER_COOKIE_SECURE', '0') == '1'
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(
+    hours=int(os.environ.get('SESSION_LIFETIME_HOURS', '12'))
+)
 
 # Use absolute path for database
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -20,6 +40,9 @@ db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 login_manager.login_message_category = 'info'
+
+# CSRF protection for all POST/PUT/PATCH/DELETE requests.
+csrf = CSRFProtect(app)
 
 # Initialize Docker/Podman client
 # Supports both Docker and Podman (Docker-compatible API)
@@ -66,6 +89,15 @@ class SharedURL(db.Model):
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
+
+
+@app.errorhandler(CSRFError)
+def handle_csrf_error(e):
+    """Return JSON for API calls; otherwise flash and redirect."""
+    if request.path.startswith('/api/'):
+        return jsonify({'success': False, 'error': 'CSRF token missing or invalid'}), 400
+    flash('Your session expired or the request was blocked (CSRF). Please try again.', 'error')
+    return redirect(request.referrer or url_for('dashboard'))
 
 
 # =============================================================================
