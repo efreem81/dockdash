@@ -6,7 +6,7 @@ services:
       - "${DOCKDASH_PORT:-9999}:5000"
     volumes:
       # Mount Docker socket (or Podman socket for rootless: /run/user/1000/podman/podman.sock)
-      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/run/docker.sock:/var/run/docker.sock:rw
       # Use bind mount for data directory (more reliable than named volumes)
       - ./data:/app/data
     environment:
@@ -14,4 +14,6 @@ services:
       - DEFAULT_USERNAME=${DEFAULT_USERNAME:-admin}
       - DEFAULT_PASSWORD=${DEFAULT_PASSWORD:-dockdash}
       - DOCKDASH_PORT=${DOCKDASH_PORT:-9999}
+    # Run as root to access Docker socket (or use group_add for non-root)
+    user: root
     restart: unless-stopped
