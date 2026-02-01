@@ -634,7 +634,8 @@ function refreshContainers() {
 let _probeQueueTimer = null;
 let _probeInFlight = 0;
 const _probeMaxConcurrency = 6;
-const _probeSeen = new Map();
+const _probeResults = new Map();
+const _probePromises = new Map();
 
 function scheduleProbeVisibleLinks() {
     if (_probeQueueTimer) clearTimeout(_probeQueueTimer);
@@ -650,58 +651,82 @@ function runProbeQueue() {
         const port = a.dataset.port;
         if (!host || !port) continue;
         const key = `${host}:${port}`;
-        if (_probeSeen.get(key)) continue;
-        _probeSeen.set(key, true);
-        enqueueProbe(a, host, port);
+
+        // If we already probed this host:port, apply to all matching anchors.
+        if (_probeResults.has(key)) {
+            applyProbeResultToAnchors(host, port, _probeResults.get(key));
+            continue;
+        }
+
+        // Avoid duplicating in-flight probes.
+        if (_probePromises.has(key)) continue;
+
+        _probePromises.set(key, enqueueProbe(host, port, key));
     }
 }
 
-function enqueueProbe(anchorEl, host, port) {
+function applyProbeResultToAnchor(anchorEl, data) {
+    const schemeEl = anchorEl.querySelector('.link-scheme');
+    const portEl = anchorEl.querySelector('.link-port');
+
+    if (data.web && data.url) {
+        anchorEl.href = data.url;
+        anchorEl.classList.remove('is-nonweb');
+        anchorEl.classList.toggle('is-https', data.scheme === 'https');
+        if (schemeEl) schemeEl.textContent = data.scheme === 'https' ? 'https' : 'http';
+        if (portEl) portEl.textContent = `:${data.port}`;
+        anchorEl.setAttribute('target', '_blank');
+        anchorEl.setAttribute('rel', 'noopener noreferrer');
+        anchorEl.style.pointerEvents = '';
+        anchorEl.removeAttribute('aria-disabled');
+        anchorEl.removeAttribute('tabindex');
+        anchorEl.title = 'Open in new tab';
+    } else {
+        // Not an HTTP(S) service; show as a plain port chip
+        anchorEl.removeAttribute('href');
+        anchorEl.classList.add('is-nonweb');
+        anchorEl.classList.remove('is-https');
+        if (schemeEl) schemeEl.textContent = 'tcp';
+        if (portEl) portEl.textContent = `:${data.port}`;
+        anchorEl.style.pointerEvents = 'none';
+        anchorEl.setAttribute('aria-disabled', 'true');
+        anchorEl.setAttribute('tabindex', '-1');
+        anchorEl.title = 'Not an HTTP service';
+    }
+}
+
+function applyProbeResultToAnchors(host, port, data) {
+    const anchors = Array.from(document.querySelectorAll('.probe-link'))
+        .filter(a => a.dataset.host === host && a.dataset.port === port);
+    anchors.forEach(a => applyProbeResultToAnchor(a, data));
+}
+
+function enqueueProbe(host, port, key) {
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
     const attempt = async () => {
-        if (_probeInFlight >= _probeMaxConcurrency) {
-            setTimeout(attempt, 100);
-            return;
+        while (_probeInFlight >= _probeMaxConcurrency) {
+            await sleep(100);
         }
+
         _probeInFlight += 1;
         try {
             const resp = await fetch(`/api/link/probe?host=${encodeURIComponent(host)}&port=${encodeURIComponent(port)}`);
             const data = await resp.json();
             if (!data || !data.success) return;
 
-            const schemeEl = anchorEl.querySelector('.link-scheme');
-            const portEl = anchorEl.querySelector('.link-port');
-
-            if (data.web && data.url) {
-                anchorEl.href = data.url;
-                anchorEl.classList.remove('is-nonweb');
-                anchorEl.classList.toggle('is-https', data.scheme === 'https');
-                if (schemeEl) schemeEl.textContent = data.scheme === 'https' ? 'https' : 'http';
-                if (portEl) portEl.textContent = `:${data.port}`;
-                anchorEl.setAttribute('target', '_blank');
-                anchorEl.setAttribute('rel', 'noopener noreferrer');
-                anchorEl.style.pointerEvents = '';
-                anchorEl.removeAttribute('aria-disabled');
-                anchorEl.removeAttribute('tabindex');
-                anchorEl.title = 'Open in new tab';
-            } else {
-                // Not an HTTP(S) service; show as a plain port chip
-                anchorEl.removeAttribute('href');
-                anchorEl.classList.add('is-nonweb');
-                anchorEl.classList.remove('is-https');
-                if (schemeEl) schemeEl.textContent = 'tcp';
-                if (portEl) portEl.textContent = `:${data.port}`;
-                anchorEl.style.pointerEvents = 'none';
-                anchorEl.setAttribute('aria-disabled', 'true');
-                anchorEl.setAttribute('tabindex', '-1');
-                anchorEl.title = 'Not an HTTP service';
-            }
+            _probeResults.set(key, data);
+            applyProbeResultToAnchors(host, port, data);
         } catch (e) {
             // Leave as default http
         } finally {
             _probeInFlight -= 1;
+            _probePromises.delete(key);
         }
     };
-    attempt();
+
+    // Kick off and return the promise so callers can avoid duplicates.
+    const p = attempt();
+    return p;
 }
 
 // Logs viewer
