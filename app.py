@@ -379,9 +379,43 @@ def api_urls():
 # Application Initialization
 # =============================================================================
 
+def init_db():
+    """Initialize the database safely."""
+    # Ensure data directory exists before creating database
+    db_dir = os.path.join(os.path.dirname(__file__), 'data')
+    os.makedirs(db_dir, exist_ok=True)
+    
+    try:
+        db.create_all()
+        init_default_user()
+    except Exception as e:
+        print(f"Error initializing database: {e}")
+        # Don't fail startup - database might be initializing in another worker
+
+
+# Track if database has been initialized
+_db_initialized = False
+
+@app.before_request
+def before_request():
+    """Initialize database on first request."""
+    global _db_initialized
+    if not _db_initialized:
+        try:
+            init_db()
+            _db_initialized = True
+        except Exception as e:
+            print(f"Database initialization deferred: {e}")
+
+
+# Also try initialization at startup
 with app.app_context():
-    db.create_all()
-    init_default_user()
+    try:
+        init_db()
+        _db_initialized = True
+    except Exception:
+        # Will retry on first request
+        pass
 
 
 if __name__ == '__main__':
