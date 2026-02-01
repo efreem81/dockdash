@@ -3,6 +3,10 @@
 
 set -e
 
+# Ensure data directory exists on host for bind mount
+mkdir -p data
+chmod 755 data
+
 echo "=== Building DockDash ==="
 docker compose build --no-cache
 

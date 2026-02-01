@@ -2,6 +2,10 @@
 
 echo "DockDash is starting..."
 
+# Ensure data directory exists and is writable
+mkdir -p /app/data
+chmod 755 /app/data
+
 # Run database initialization
 python init_db.py || {
     echo "Database initialization had issues, but continuing..."
