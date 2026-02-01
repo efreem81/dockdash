@@ -1053,11 +1053,11 @@ a:hover {
 }
 
 /* Column widths for compact layout */
-.container-table th:nth-child(1) { width: 22%; } /* Container */
-.container-table th:nth-child(2) { width: 10%; } /* Status */
-.container-table th:nth-child(3) { width: 28%; } /* Image */
-.container-table th:nth-child(4) { width: 28%; } /* Links */
-.container-table th:nth-child(5) { width: 12%; } /* Actions */
+.container-table th:nth-child(1) { width: 20%; } /* Container */
+.container-table th:nth-child(2) { width: 9%; } /* Status */
+.container-table th:nth-child(3) { width: 26%; } /* Image */
+.container-table th:nth-child(4) { width: 15%; min-width: 110px; } /* Actions */
+.container-table th:nth-child(5) { width: 30%; } /* Links */
 
 .container-table tbody tr {
     border-bottom: 1px solid var(--border-color);
@@ -1109,6 +1109,8 @@ a:hover {
 
 .container-table .cell-links {
     padding-right: 0.25rem;
+    max-width: 100%;
+    overflow: hidden;
 }
 
 .links-strip {
@@ -1150,10 +1152,6 @@ a:hover {
 
 .no-ports-badge {
     color: var(--text-muted);
-}
-
-.container-table .cell-links {
-    display: inline;
 }
 
 .table-link {
@@ -1213,10 +1211,12 @@ a:hover {
 }
 
 .container-table .cell-actions {
-    display: inline-flex;
-    gap: 0.25rem;
+    display: flex;
+    gap: 0.35rem;
     flex-wrap: nowrap;
     white-space: nowrap;
+    justify-content: flex-start;
+    min-width: 100px;
 }
 
 .btn-xs {

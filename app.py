@@ -146,11 +146,15 @@ def get_container_info(container):
     ports = container.attrs.get('NetworkSettings', {}).get('Ports', {})
     host_ip = get_host_ip()
     
+    # Deduplicate by host_port (Docker returns duplicates for IPv4/IPv6 bindings)
+    seen_host_ports = set()
+    
     for container_port, bindings in ports.items():
         if bindings:
             for binding in bindings:
                 host_port = binding.get('HostPort')
-                if host_port:
+                if host_port and host_port not in seen_host_ports:
+                    seen_host_ports.add(host_port)
                     port_info = {
                         'container_port': container_port,
                         'host_port': host_port,
