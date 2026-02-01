@@ -9,8 +9,6 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
 from sqlalchemy import text
 import time
-import socket
-import ssl
 import requests
 
 # Initialize Flask app
@@ -201,62 +199,67 @@ def _cache_set(key, value):
     _probe_cache[key] = (time.time(), value)
 
 
-def _tls_handshake_ok(host: str, port: int, timeout: float = 1.5) -> bool:
-    """True if a TLS handshake succeeds (openssl s_client-style check)."""
+def _probe_http_url(url: str, timeout: float, verify_tls: bool) -> bool:
+    """Return True if the URL responds to an HTTP request.
+
+    This intentionally validates HTTP semantics (curl-like), not just a TCP/TLS handshake.
+    """
+    headers = {
+        'User-Agent': 'DockDashProbe/1.0',
+        'Accept': '*/*',
+    }
+
+    # Prefer HEAD, but some apps/proxies misbehave; fall back to GET.
     try:
-        raw_sock = socket.create_connection((host, port), timeout=timeout)
+        r = requests.head(url, timeout=timeout, allow_redirects=True, verify=verify_tls, headers=headers)
         try:
-            ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
-            tls_sock = ctx.wrap_socket(raw_sock, server_hostname=host)
-            try:
-                tls_sock.do_handshake()
-                return True
-            finally:
-                try:
-                    tls_sock.close()
-                except Exception:
-                    pass
+            return True
         finally:
             try:
-                raw_sock.close()
+                r.close()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    try:
+        r = requests.get(url, timeout=timeout, allow_redirects=True, verify=verify_tls, headers=headers, stream=True)
+        try:
+            # Read a tiny bit to ensure the server actually speaks HTTP.
+            for _ in r.iter_content(chunk_size=1):
+                break
+            return True
+        finally:
+            try:
+                r.close()
             except Exception:
                 pass
     except Exception:
         return False
 
 
-def _http_ok(host: str, port: int, timeout: float = 1.5) -> bool:
-    """True if an HTTP request returns any valid response (curl-style check)."""
-    url = f"http://{host}:{port}"
-    try:
-        # Prefer HEAD, fall back to GET if not allowed.
-        r = requests.head(url, timeout=timeout, allow_redirects=True)
-        return True if r is not None else False
-    except Exception:
-        try:
-            r = requests.get(url, timeout=timeout, allow_redirects=True, stream=True)
-            return True if r is not None else False
-        except Exception:
-            return False
-
-
-def probe_scheme(host: str, port: int) -> str:
-    """Return 'https', 'http', or 'unknown' for host:port."""
+def probe_http_scheme(host: str, port: int) -> tuple[str, bool]:
+    """Return (scheme, web) where scheme is 'https'|'http'|'unknown' and web indicates HTTP(S) worked."""
     cache_key = f"{host}:{port}"
     cached = _cache_get(cache_key, ttl_seconds=60)
     if cached:
         return cached
 
-    scheme = 'unknown'
-    if _tls_handshake_ok(host, port):
-        scheme = 'https'
-    elif _http_ok(host, port):
-        scheme = 'http'
+    # Try HTTPS first (common for dashboards), then HTTP.
+    https_url = f"https://{host}:{port}"
+    http_url = f"http://{host}:{port}"
 
-    _cache_set(cache_key, scheme)
-    return scheme
+    scheme = 'unknown'
+    web = False
+    if _probe_http_url(https_url, timeout=1.5, verify_tls=False):
+        scheme = 'https'
+        web = True
+    elif _probe_http_url(http_url, timeout=1.5, verify_tls=True):
+        scheme = 'http'
+        web = True
+
+    _cache_set(cache_key, (scheme, web))
+    return scheme, web
 
 
 def init_default_user():
@@ -459,13 +462,19 @@ def api_probe_link():
     if host not in allowed_hosts:
         return jsonify({'success': False, 'error': 'Host not allowed'}), 400
 
-    scheme = probe_scheme(host, port)
-    if scheme == 'https':
-        url = f"https://{host}:{port}"
-    else:
-        url = f"http://{host}:{port}"
+    scheme, web = probe_http_scheme(host, port)
+    url = None
+    if web:
+        url = f"{scheme}://{host}:{port}" if scheme in ('http', 'https') else f"http://{host}:{port}"
 
-    return jsonify({'success': True, 'scheme': scheme, 'url': url, 'host': host, 'port': port})
+    return jsonify({
+        'success': True,
+        'scheme': scheme,
+        'web': web,
+        'url': url,
+        'host': host,
+        'port': port
+    })
 
 
 @app.route('/health')

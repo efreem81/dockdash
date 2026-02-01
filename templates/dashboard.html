@@ -132,7 +132,8 @@
                            data-port="{{ port.host_port }}"
                            data-container-port="{{ port.container_port }}"
                            title="Open in new tab">
-                            <span class="link-scheme">http</span> :{{ port.host_port }}
+                            <span class="link-scheme">http</span>
+                            <span class="link-port">:{{ port.host_port }}</span>
                         </a>
                     </div>
                     {% endfor %}
@@ -273,20 +274,23 @@
                 <label class="checkbox-inline">
                     <input type="checkbox" id="logsFollow" checked>
                     Follow
-                </label>
+                    <td class="cell-links">
                 <label class="modal-field">
-                    Tail
-                    <select id="logsTail">
-                        <option value="100">100</option>
-                        <option value="200" selected>200</option>
-                        <option value="500">500</option>
-                        <option value="1000">1000</option>
-                    </select>
-                </label>
-                <button class="btn btn-secondary btn-sm" onclick="refreshLogs()">🔄 Refresh</button>
-                <button class="btn btn-secondary btn-sm" onclick="copyLogs()">📋 Copy</button>
-            </div>
-            <pre class="logs-output" id="logsOutput">Loading…</pre>
+                            <div class="links-strip" aria-label="Container links">
+                                {% for port in container.ports %}
+                                    <a href="{{ port.url }}"
+                                       target="_blank"
+                                       rel="noopener noreferrer"
+                                       class="table-link probe-link"
+                                       data-host="{{ host_ip }}"
+                                       data-port="{{ port.host_port }}"
+                                       data-container-port="{{ port.container_port }}"
+                                       title="Open in new tab">
+                                        <span class="link-scheme">http</span>
+                                        <span class="link-port">:{{ port.host_port }}</span>
+                                    </a>
+                                {% endfor %}
+                            </div>
         </div>
     </div>
 
@@ -662,13 +666,34 @@ function enqueueProbe(anchorEl, host, port) {
         try {
             const resp = await fetch(`/api/link/probe?host=${encodeURIComponent(host)}&port=${encodeURIComponent(port)}`);
             const data = await resp.json();
-            if (data && data.success && data.url) {
+            if (!data || !data.success) return;
+
+            const schemeEl = anchorEl.querySelector('.link-scheme');
+            const portEl = anchorEl.querySelector('.link-port');
+
+            if (data.web && data.url) {
                 anchorEl.href = data.url;
-                const schemeEl = anchorEl.querySelector('.link-scheme');
+                anchorEl.classList.remove('is-nonweb');
+                anchorEl.classList.toggle('is-https', data.scheme === 'https');
                 if (schemeEl) schemeEl.textContent = data.scheme === 'https' ? 'https' : 'http';
-                if (data.scheme === 'https') {
-                    anchorEl.classList.add('is-https');
-                }
+                if (portEl) portEl.textContent = `:${data.port}`;
+                anchorEl.setAttribute('target', '_blank');
+                anchorEl.setAttribute('rel', 'noopener noreferrer');
+                anchorEl.style.pointerEvents = '';
+                anchorEl.removeAttribute('aria-disabled');
+                anchorEl.removeAttribute('tabindex');
+                anchorEl.title = 'Open in new tab';
+            } else {
+                // Not an HTTP(S) service; show as a plain port chip
+                anchorEl.removeAttribute('href');
+                anchorEl.classList.add('is-nonweb');
+                anchorEl.classList.remove('is-https');
+                if (schemeEl) schemeEl.textContent = 'tcp';
+                if (portEl) portEl.textContent = `:${data.port}`;
+                anchorEl.style.pointerEvents = 'none';
+                anchorEl.setAttribute('aria-disabled', 'true');
+                anchorEl.setAttribute('tabindex', '-1');
+                anchorEl.title = 'Not an HTTP service';
             }
         } catch (e) {
             // Leave as default http

@@ -1054,11 +1054,10 @@ a:hover {
 
 /* Column widths for compact layout */
 .container-table th:nth-child(1) { width: 22%; } /* Container */
-.container-table th:nth-child(2) { width: 8%; }  /* Status */
+.container-table th:nth-child(2) { width: 10%; } /* Status */
 .container-table th:nth-child(3) { width: 28%; } /* Image */
-.container-table th:nth-child(4) { width: 12%; } /* Ports */
-.container-table th:nth-child(5) { width: 18%; } /* Links */
-.container-table th:nth-child(6) { width: 12%; } /* Actions */
+.container-table th:nth-child(4) { width: 28%; } /* Links */
+.container-table th:nth-child(5) { width: 12%; } /* Actions */
 
 .container-table tbody tr {
     border-bottom: 1px solid var(--border-color);
@@ -1108,6 +1107,31 @@ a:hover {
     color: var(--text-muted);
 }
 
+.container-table .cell-links {
+    padding-right: 0.25rem;
+}
+
+.links-strip {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    padding-bottom: 2px;
+}
+
+.links-strip::-webkit-scrollbar {
+    height: 6px;
+}
+
+.links-strip::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.5);
+    border-radius: 999px;
+}
+
 .container-table .cell-ports {
     display: inline;
 }
@@ -1152,15 +1176,19 @@ a:hover {
 
 .link-scheme {
     display: inline-block;
-    min-width: 3.1ch;
-    padding: 0.05rem 0.35rem;
+    padding: 0.05rem 0.3rem;
     border-radius: 999px;
-    font-size: 0.7rem;
+    font-size: 0.68rem;
     font-weight: 700;
     text-transform: lowercase;
     background: rgba(59, 130, 246, 0.12);
     color: var(--primary-dark);
-    margin-right: 0.35rem;
+    margin-right: 0.25rem;
+}
+
+.link-port {
+    font-family: 'Monaco', 'Consolas', monospace;
+    font-size: 0.75rem;
 }
 
 .probe-link.is-https .link-scheme {
@@ -1168,9 +1196,27 @@ a:hover {
     color: var(--success-color);
 }
 
+.probe-link.is-nonweb {
+    background: rgba(148, 163, 184, 0.12);
+    color: var(--text-muted);
+    border: 1px dashed rgba(148, 163, 184, 0.45);
+}
+
+.probe-link.is-nonweb:hover {
+    background: rgba(148, 163, 184, 0.12);
+    color: var(--text-muted);
+}
+
+.probe-link.is-nonweb .link-scheme {
+    background: rgba(148, 163, 184, 0.22);
+    color: rgba(148, 163, 184, 0.95);
+}
+
 .container-table .cell-actions {
     display: inline-flex;
     gap: 0.25rem;
+    flex-wrap: nowrap;
+    white-space: nowrap;
 }
 
 .btn-xs {
