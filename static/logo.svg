@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Water/Wave background -->
+  <defs>
+    <linearGradient id="waterGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#60A5FA"/>
+      <stop offset="100%" style="stop-color:#3B82F6"/>
+    </linearGradient>
+    <linearGradient id="boatGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#F59E0B"/>
+      <stop offset="100%" style="stop-color:#D97706"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Circle background -->
+  <circle cx="50" cy="50" r="48" fill="url(#waterGrad)"/>
+  
+  <!-- Cute waves -->
+  <path d="M5 60 Q15 55 25 60 T45 60 T65 60 T85 60 T95 60 L95 98 L5 98 Z" fill="#2563EB" opacity="0.3"/>
+  <path d="M5 65 Q15 60 25 65 T45 65 T65 65 T85 65 T95 65 L95 98 L5 98 Z" fill="#1D4ED8" opacity="0.4"/>
+  
+  <!-- Speedboat hull -->
+  <path d="M20 52 L35 58 L65 58 L80 52 L75 48 L25 48 Z" fill="url(#boatGrad)"/>
+  <path d="M25 48 L30 42 L55 42 L50 48 Z" fill="#FBBF24"/>
+  
+  <!-- Dashboard/windshield -->
+  <rect x="32" y="36" width="20" height="8" rx="2" fill="#1E3A5F"/>
+  <rect x="34" y="37" width="7" height="6" rx="1" fill="#34D399"/>
+  <rect x="43" y="37" width="7" height="6" rx="1" fill="#F472B6"/>
+  
+  <!-- Cute speedboat details -->
+  <circle cx="28" cy="45" r="2" fill="#FEF3C7"/>
+  <path d="M70 45 L78 42 L78 48 Z" fill="#EF4444"/>
+  
+  <!-- Speed lines -->
+  <line x1="12" y1="50" x2="18" y2="50" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.7"/>
+  <line x1="10" y1="55" x2="16" y2="55" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+  <line x1="14" y1="45" x2="19" y2="45" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+  
+  <!-- Container boxes on boat -->
+  <rect x="56" y="40" width="8" height="8" rx="1" fill="#8B5CF6"/>
+  <rect x="58" y="42" width="4" height="1" fill="#A78BFA"/>
+  <rect x="66" y="42" width="6" height="6" rx="1" fill="#06B6D4"/>
+  <rect x="67" y="43" width="3" height="1" fill="#22D3EE"/>
+</svg>

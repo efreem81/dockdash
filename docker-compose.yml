@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  dockdash:
+    build: .
+    container_name: dockdash
+    ports:
+      - "${DOCKDASH_PORT:-8080}:5000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - dockdash_data:/app/data
+    environment:
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
+      - DEFAULT_USERNAME=${DEFAULT_USERNAME:-admin}
+      - DEFAULT_PASSWORD=${DEFAULT_PASSWORD:-dockdash}
+    restart: unless-stopped
+
+volumes:
+  dockdash_data:
