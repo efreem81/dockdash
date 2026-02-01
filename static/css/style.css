@@ -1033,7 +1033,8 @@ a:hover {
 .container-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
+    table-layout: fixed;
 }
 
 .container-table thead {
@@ -1042,13 +1043,22 @@ a:hover {
 }
 
 .container-table th {
-    padding: 1rem;
+    padding: 0.5rem 0.75rem;
     text-align: left;
     font-weight: 600;
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    white-space: nowrap;
 }
+
+/* Column widths for compact layout */
+.container-table th:nth-child(1) { width: 22%; } /* Container */
+.container-table th:nth-child(2) { width: 8%; }  /* Status */
+.container-table th:nth-child(3) { width: 28%; } /* Image */
+.container-table th:nth-child(4) { width: 12%; } /* Ports */
+.container-table th:nth-child(5) { width: 18%; } /* Links */
+.container-table th:nth-child(6) { width: 12%; } /* Actions */
 
 .container-table tbody tr {
     border-bottom: 1px solid var(--border-color);
@@ -1064,14 +1074,17 @@ a:hover {
 }
 
 .container-table td {
-    padding: 0.875rem 1rem;
+    padding: 0.4rem 0.75rem;
     vertical-align: middle;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .container-table .cell-name {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .container-table .cell-name strong {
@@ -1080,36 +1093,35 @@ a:hover {
 }
 
 .container-table .cell-id {
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     color: var(--text-muted);
     font-family: 'Monaco', 'Consolas', monospace;
+    margin-left: 0.5rem;
 }
 
 .container-table .cell-image {
-    max-width: 200px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     font-family: 'Monaco', 'Consolas', monospace;
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     color: var(--text-muted);
 }
 
 .container-table .cell-ports {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.25rem;
+    display: inline;
 }
 
 .port-badge {
     display: inline-block;
-    padding: 0.2rem 0.5rem;
+    padding: 0.1rem 0.4rem;
     background: var(--primary-light);
     color: white;
-    border-radius: 4px;
-    font-size: 0.75rem;
+    border-radius: 3px;
+    font-size: 0.7rem;
     font-weight: 600;
     font-family: 'Monaco', 'Consolas', monospace;
+    margin-right: 0.25rem;
 }
 
 .no-ports-badge {
@@ -1117,23 +1129,20 @@ a:hover {
 }
 
 .container-table .cell-links {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
+    display: inline;
 }
 
 .table-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    padding: 0.25rem 0.5rem;
+    display: inline-block;
+    padding: 0.15rem 0.4rem;
     background: rgba(16, 185, 129, 0.1);
     color: var(--success-color);
     text-decoration: none;
-    border-radius: 4px;
-    font-size: 0.8rem;
+    border-radius: 3px;
+    font-size: 0.7rem;
     font-weight: 500;
     transition: var(--transition);
+    margin-right: 0.25rem;
 }
 
 .table-link:hover {
@@ -1142,14 +1151,14 @@ a:hover {
 }
 
 .container-table .cell-actions {
-    display: flex;
-    gap: 0.5rem;
+    display: inline-flex;
+    gap: 0.25rem;
 }
 
 .btn-xs {
-    padding: 0.35rem 0.5rem;
-    font-size: 0.875rem;
-    min-width: 32px;
+    padding: 0.2rem 0.4rem;
+    font-size: 0.8rem;
+    min-width: 28px;
 }
 
 /* Table row status styling */
