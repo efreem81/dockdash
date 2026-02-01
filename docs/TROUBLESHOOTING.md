@@ -10,17 +10,17 @@
 
 **Solutions:**
 
-1. **Ensure the volume is properly mounted (docker-compose)**
+1. **Ensure the volume is properly mounted (docker compose)**
    ```yaml
    volumes:
-     - dockdash_data:/app/data
+     - ./data:/app/data
    ```
 
 2. **Rebuild the Docker image**
    ```bash
-   docker-compose down
-   docker-compose build --no-cache
-   docker-compose up
+   docker compose down
+   docker compose build --no-cache
+   docker compose up
    ```
 
 3. **Check volume permissions**
@@ -31,12 +31,12 @@
 
 4. **Run database initialization manually**
    ```bash
-   docker-compose exec dockdash python init_db.py
+   docker compose exec dockdash python init_db.py
    ```
 
 5. **Verify the data directory exists**
    ```bash
-   docker-compose exec dockdash ls -la /app/data/
+   docker compose exec dockdash ls -la /app/data/
    ```
 
 **Prevention:**
@@ -101,8 +101,8 @@ Password: dockdash
 Option 1: Delete the database and restart
 ```bash
 docker volume rm dockdash_data
-docker-compose down
-docker-compose up
+docker compose down
+docker compose up
 ```
 
 Option 2: Change environment variables
@@ -115,13 +115,13 @@ environment:
 
 Then reset:
 ```bash
-docker-compose down
-docker-compose up
+docker compose down
+docker compose up
 ```
 
 Option 3: SQL query (advanced)
 ```bash
-docker-compose exec dockdash python -c "
+docker compose exec dockdash python -c "
 from app import app, db, User
 from werkzeug.security import generate_password_hash
 
@@ -146,7 +146,7 @@ with app.app_context():
 
 1. **Verify Docker socket is mounted**
    ```bash
-   docker-compose exec dockdash python -c "
+   docker compose exec dockdash python -c "
    import docker
    client = docker.from_env()
    containers = client.containers.list()
@@ -166,7 +166,7 @@ with app.app_context():
 
 4. **Restart the container**
    ```bash
-   docker-compose restart dockdash
+   docker compose restart dockdash
    ```
 
 ---
@@ -195,12 +195,12 @@ DockDash detects ports from:
 
 1. **Check database connectivity**
    ```bash
-   docker-compose logs dockdash | grep -i "database\|error"
+   docker compose logs dockdash | grep -i "database\|error"
    ```
 
 2. **Verify database permissions**
    ```bash
-   docker-compose exec dockdash ls -la /app/data/dockdash.db
+   docker compose exec dockdash ls -la /app/data/dockdash.db
    ```
 
 3. **Check free disk space**
@@ -211,7 +211,7 @@ DockDash detects ports from:
 4. **Reset the database**
    ```bash
    docker volume rm dockdash_data
-   docker-compose restart dockdash
+   docker compose restart dockdash
    ```
 
 ---
@@ -236,12 +236,12 @@ DockDash detects ports from:
 
 3. **Check logs for errors**
    ```bash
-   docker-compose logs -f dockdash
+   docker compose logs -f dockdash
    ```
 
 4. **Restart the container**
    ```bash
-   docker-compose restart dockdash
+   docker compose restart dockdash
    ```
 
 5. **Increase Docker resources**
@@ -304,7 +304,7 @@ docker volume ls
 docker volume inspect dockdash_data
 
 # Check mount point
-docker-compose inspect dockdash | grep -A 5 "Mounts"
+docker compose inspect dockdash | grep -A 5 "Mounts"
 ```
 
 ---
@@ -364,12 +364,12 @@ services:
 
 **Check application logs:**
 ```bash
-docker-compose logs -f dockdash
+docker compose logs -f dockdash
 ```
 
 **Check Docker socket access:**
 ```bash
-docker-compose exec dockdash python -c "
+docker compose exec dockdash python -c "
 import docker
 try:
     client = docker.from_env()
@@ -382,7 +382,7 @@ except Exception as e:
 
 **Check database:**
 ```bash
-docker-compose exec dockdash python -c "
+docker compose exec dockdash python -c "
 from app import app, db, User, SharedURL
 with app.app_context():
     print(f'Users: {User.query.count()}')
@@ -394,7 +394,7 @@ with app.app_context():
 
 ```bash
 # Enter the container
-docker-compose exec dockdash bash
+docker compose exec dockdash bash
 
 # Use sqlite3
 sqlite3 /app/data/dockdash.db
