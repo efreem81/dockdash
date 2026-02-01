@@ -73,7 +73,17 @@ def load_user(user_id):
 # =============================================================================
 
 def get_host_ip():
-    """Get the host IP address for container URL generation."""
+    """Get the host IP address for container URL generation.
+    
+    Uses HOST_IP environment variable if set, otherwise auto-detects.
+    Set HOST_IP in docker-compose.yml for correct LAN access.
+    """
+    # Check for configured HOST_IP first (recommended for Docker)
+    configured_ip = os.environ.get('HOST_IP')
+    if configured_ip:
+        return configured_ip
+    
+    # Fallback to auto-detection (may return Docker network IP)
     import socket
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

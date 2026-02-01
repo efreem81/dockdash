@@ -14,6 +14,8 @@ services:
       - DEFAULT_USERNAME=${DEFAULT_USERNAME:-admin}
       - DEFAULT_PASSWORD=${DEFAULT_PASSWORD:-dockdash}
       - DOCKDASH_PORT=${DOCKDASH_PORT:-9999}
+      # Set HOST_IP to your server's LAN IP for correct container URLs
+      - HOST_IP=${HOST_IP:-}
     # Run as root to access Docker socket (or use group_add for non-root)
     user: root
     restart: unless-stopped
