@@ -41,12 +41,12 @@ A sleek container management dashboard with a nautical theme. Works with both **
    
    Open your browser and navigate to:
    ```
-   http://localhost:8080
+   http://localhost:9999
    ```
    
    Or from another device on your network:
    ```
-   http://<host-ip>:8080
+   http://<host-ip>:9999
    ```
 
 4. **Login**

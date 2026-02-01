@@ -5,16 +5,14 @@ services:
     build: .
     container_name: dockdash
     ports:
-      - "${DOCKDASH_PORT:-8080}:5000"
+      - "${DOCKDASH_PORT:-9999}:5000"
     volumes:
       # Mount Docker socket (or Podman socket for rootless: /run/user/1000/podman/podman.sock)
       - /var/run/docker.sock:/var/run/docker.sock
-      - dockdash_data:/app/data
+      # Use bind mount for data directory (more reliable than named volumes)
+      - ./data:/app/data
     environment:
       - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
       - DEFAULT_USERNAME=${DEFAULT_USERNAME:-admin}
       - DEFAULT_PASSWORD=${DEFAULT_PASSWORD:-dockdash}
     restart: unless-stopped
-
-volumes:
-  dockdash_data:

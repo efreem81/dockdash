@@ -318,7 +318,7 @@ docker-compose inspect dockdash | grep -A 5 "Mounts"
 **Using nginx:**
 ```nginx
 upstream dockdash {
-    server localhost:8080;
+    server localhost:9999;
 }
 
 server {
