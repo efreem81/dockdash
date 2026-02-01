@@ -18,9 +18,15 @@ login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 login_manager.login_message_category = 'info'
 
-# Initialize Docker client
+# Initialize Docker/Podman client
+# Supports both Docker and Podman (Docker-compatible API)
 try:
-    docker_client = docker.from_env()
+    # Try custom socket path from environment (for Podman)
+    socket_path = os.environ.get('DOCKER_HOST', 'unix:///var/run/docker.sock')
+    if socket_path.startswith('unix://'):
+        docker_client = docker.DockerClient(base_url=socket_path)
+    else:
+        docker_client = docker.from_env()
 except docker.errors.DockerException:
     docker_client = None
 
@@ -125,7 +131,7 @@ def init_default_user():
     """Create default admin user if no users exist."""
     if User.query.count() == 0:
         default_username = os.environ.get('DEFAULT_USERNAME', 'admin')
-        default_password = os.environ.get('DEFAULT_PASSWORD', 'dockerminder')
+        default_password = os.environ.get('DEFAULT_PASSWORD', 'dockdash')
         
         user = User(username=default_username)
         user.set_password(default_password)

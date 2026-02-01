@@ -1,6 +1,8 @@
-# 🐳 DockerMinder
+# ⛵ DockDash
 
-A Docker containerized web application for managing Docker containers on a host. View container status, manage containers (start/stop/restart), and maintain a shared URL bookmark list accessible across your network.
+**Smooth sailing for your containers!**
+
+A sleek container management dashboard with a nautical theme. Works with both **Docker** and **Podman**! View container status, manage containers (start/stop/restart), and maintain a shared URL bookmark list accessible across your network.
 
 ![Docker](https://img.shields.io/badge/Docker-ready-blue?logo=docker)
 ![Python](https://img.shields.io/badge/Python-3.11-green?logo=python)
@@ -11,7 +13,7 @@ A Docker containerized web application for managing Docker containers on a host.
 - **📊 Container Dashboard**: View all running containers with real-time status
 - **🔌 Port Mapping**: See exposed ports with clickable LAN URLs
 - **🎮 Container Control**: Start, stop, and restart containers from the web UI
-- **🔐 Secure Login**: Password-protected access (default: admin/dockerminder)
+- **🔐 Secure Login**: Password-protected access (default: admin/dockdash)
 - **🔗 URL Share**: Shared bookmark system for team URLs and services
 - **📱 Responsive Design**: Works on desktop, tablet, and mobile
 - **🌐 LAN Accessible**: Access from any device on your network
@@ -20,19 +22,19 @@ A Docker containerized web application for managing Docker containers on a host.
 
 ### Prerequisites
 
-- Docker and Docker Compose installed on your host
+- Docker and Docker Compose (or Podman and podman-compose) installed on your host
 
 ### Installation
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/dockerminder.git
-   cd dockerminder
+   git clone git@github.com:efreem81/dockdash.git
+   cd dockdash
    ```
 
-2. **Start DockerMinder**
+2. **Start DockDash**
    ```bash
-   docker-compose up -d
+   ./build.sh
    ```
 
 3. **Access the Web UI**
@@ -49,9 +51,28 @@ A Docker containerized web application for managing Docker containers on a host.
 
 4. **Login**
    - **Username**: `admin`
-   - **Password**: `dockerminder`
+   - **Password**: `dockdash`
 
    > ⚠️ **Important**: Change the default password after first login!
+
+### Using with Podman
+
+DockDash works with Podman! For **rootless Podman**:
+
+```bash
+# Edit docker-compose.yml to use Podman socket
+sed -i 's|/var/run/docker.sock|/run/user/1000/podman/podman.sock|' docker-compose.yml
+
+# Start with podman-compose
+podman-compose up -d
+```
+
+For **rootful Podman**, enable the Docker-compatible socket:
+
+```bash
+sudo systemctl enable --now podman.socket
+# Then use docker-compose as normal
+```
 
 ## ⚙️ Configuration
 
@@ -61,7 +82,8 @@ A Docker containerized web application for managing Docker containers on a host.
 |----------|---------|-------------|
 | `SECRET_KEY` | `change-me-in-production` | Flask secret key for sessions |
 | `DEFAULT_USERNAME` | `admin` | Default admin username |
-| `DEFAULT_PASSWORD` | `dockerminder` | Default admin password |
+| `DEFAULT_PASSWORD` | `dockdash` | Default admin password |
+| `DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker/Podman socket path |
 
 ### Custom Configuration
 
@@ -75,11 +97,10 @@ DEFAULT_PASSWORD=your-secure-password
 
 ### Change the Port
 
-Edit `docker-compose.yml` to change the exposed port:
+Set `DOCKDASH_PORT` when starting:
 
-```yaml
-ports:
-  - "3000:5000"  # Access on port 3000 instead of 8080
+```bash
+DOCKDASH_PORT=3000 ./build.sh
 ```
 
 ## 📖 Usage
@@ -123,7 +144,7 @@ A shared bookmark system for your team:
 ## 🏗️ Architecture
 
 ```
-dockerminder/
+dockdash/
 ├── app.py              # Flask application
 ├── Dockerfile          # Container build instructions
 ├── docker-compose.yml  # Container orchestration
@@ -137,8 +158,9 @@ dockerminder/
 │   ├── edit_url.html
 │   └── change_password.html
 └── static/
+    ├── logo.svg        # DockDash logo
     ├── css/
-    │   └── style.css   # Application styles
+    │   └── style.css   # Nautical theme styles
     └── js/
         └── app.js      # Client-side JavaScript
 ```
@@ -162,17 +184,17 @@ python app.py
 ### Build Docker Image
 
 ```bash
-docker build -t dockerminder .
+docker build -t dockdash .
 ```
 
 ### Run with Docker
 
 ```bash
 docker run -d \
-  --name dockerminder \
+  --name dockdash \
   -p 8080:5000 \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  dockerminder
+  dockdash
 ```
 
 ## 📝 API Endpoints
@@ -201,4 +223,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-Made with ❤️ for Docker enthusiasts
+⛵ **DockDash** - Smooth sailing for your containers!
