@@ -43,7 +43,7 @@ DockDash is a well-designed container management dashboard with a beautiful naut
 ### Features
 - ✅ **Container Management** - Start, stop, restart containers
 - ✅ **Container Discovery** - Automatic detection of running containers
-- ✅ **Port Mapping Display** - Shows exposed ports with clickable URLs
+- ✅ **Port Mapping Display** - Shows exposed ports with HTTP(S)-verified service links (non-web ports shown as non-clickable `tcp`)
 - ✅ **URL Bookmarking** - Shared bookmark system with categories
 - ✅ **Docker/Podman Support** - Works with both container runtimes
 
@@ -58,22 +58,12 @@ DockDash is a well-designed container management dashboard with a beautiful naut
 
 ### 🔴 SECURITY VULNERABILITIES
 
-#### 1. No CSRF Protection
-**Severity:** HIGH  
-**Impact:** All POST requests vulnerable to Cross-Site Request Forgery attacks
+#### 1. CSRF Protection
+**Severity:** HIGH (when missing)  
+**Status:** ✅ Implemented  
+**Notes:** DockDash now enables CSRF protection via Flask-WTF (`CSRFProtect`). State-changing requests require a valid CSRF token.
 
 ```python
-# Current: No CSRF tokens
-<form method="POST">
-    <input name="password">
-</form>
-
-# Risk: Attacker can craft malicious forms to perform actions on behalf of users
-```
-
-**Fix Required:**
-```python
-pip install flask-wtf
 from flask_wtf.csrf import CSRFProtect
 csrf = CSRFProtect(app)
 ```
@@ -94,31 +84,25 @@ def login():
     ...
 ```
 
-#### 3. Weak Default Secret Key
-**Severity:** HIGH  
-**Impact:** Session hijacking if default key is used
+#### 3. Secret Key Handling
+**Severity:** HIGH (when weak)  
+**Status:** 🟡 Improved  
+**Notes:** DockDash no longer falls back to a known constant. If `SECRET_KEY` is missing, it generates a random key at startup (sessions reset on restart). For stable sessions, set `SECRET_KEY` explicitly.
 
 ```python
-# Current: app.py line 11
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-me')
-
-# Problem: Hardcoded fallback key in source code
+_secret_key = os.environ.get('SECRET_KEY')
+if not _secret_key:
+   _secret_key = secrets.token_hex(32)
+app.config['SECRET_KEY'] = _secret_key
 ```
 
-**Fix Required:**
-- Remove default key from code
-- Force users to set SECRET_KEY environment variable
-- Add startup check to ensure strong key is set
+#### 4. Session Timeout
+**Severity:** MEDIUM (when missing)  
+**Status:** ✅ Implemented  
+**Notes:** Session lifetime is configured via `SESSION_LIFETIME_HOURS` (default 12h). Cookie flags are set to LAN-friendly defaults; enable secure cookies when running behind HTTPS.
 
-#### 4. No Session Timeout
-**Severity:** MEDIUM  
-**Impact:** Sessions never expire, increasing security risk
-
-**Fix Required:**
 ```python
-from datetime import timedelta
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
-app.config['SESSION_COOKIE_SECURE'] = True  # HTTPS only
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=int(os.environ.get('SESSION_LIFETIME_HOURS', '12')))
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 ```
@@ -162,8 +146,9 @@ class AuditLog(db.Model):
 
 ### 🟠 CONTAINER MANAGEMENT LIMITATIONS
 
-#### 9. No Container Logs Viewing
-**Impact:** Cannot debug container issues without SSH access
+#### 9. Container Logs Viewing
+**Impact:** Improves troubleshooting without SSH access
+**Status:** ✅ Implemented
 
 **Implementation:**
 ```python

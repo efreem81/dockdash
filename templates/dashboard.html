@@ -52,21 +52,25 @@
         <div class="search-box">
             <span class="search-icon">🔍</span>
             <input type="text" id="searchInput" placeholder="Search containers..." autocomplete="off">
-            <button class="search-clear" id="searchClear" onclick="clearSearch()" style="display: none;">✕</button>
+            <button class="search-clear" id="searchClear" onclick="clearSearch()" aria-label="Clear search" style="display: none;">×</button>
         </div>
+
         <div class="sort-controls">
-            <label>Sort by:</label>
+            <label for="sortSelect">Sort</label>
             <select id="sortSelect" onchange="sortContainers()">
-                <option value="name-asc">Name (A-Z)</option>
-                <option value="name-desc">Name (Z-A)</option>
-                <option value="status-asc">Status (Running first)</option>
-                <option value="status-desc">Status (Stopped first)</option>
-                <option value="created-desc">Created (Newest)</option>
-                <option value="created-asc">Created (Oldest)</option>
+                <option value="name-asc" selected>Name (A→Z)</option>
+                <option value="name-desc">Name (Z→A)</option>
+                <option value="status-asc">Status (running first)</option>
+                <option value="status-desc">Status (running last)</option>
+                <option value="image-asc">Image (A→Z)</option>
+                <option value="image-desc">Image (Z→A)</option>
+                <option value="created-desc">Created (newest)</option>
+                <option value="created-asc">Created (oldest)</option>
             </select>
         </div>
+
         <div class="page-size-controls">
-            <label>Show:</label>
+            <label for="pageSizeSelect">Per page</label>
             <select id="pageSizeSelect" onchange="changePageSize()">
                 <option value="10">10</option>
                 <option value="25" selected>25</option>
@@ -274,23 +278,23 @@
                 <label class="checkbox-inline">
                     <input type="checkbox" id="logsFollow" checked>
                     Follow
-                    <td class="cell-links">
+                </label>
+
                 <label class="modal-field">
-                            <div class="links-strip" aria-label="Container links">
-                                {% for port in container.ports %}
-                                    <a href="{{ port.url }}"
-                                       target="_blank"
-                                       rel="noopener noreferrer"
-                                       class="table-link probe-link"
-                                       data-host="{{ host_ip }}"
-                                       data-port="{{ port.host_port }}"
-                                       data-container-port="{{ port.container_port }}"
-                                       title="Open in new tab">
-                                        <span class="link-scheme">http</span>
-                                        <span class="link-port">:{{ port.host_port }}</span>
-                                    </a>
-                                {% endfor %}
-                            </div>
+                    Tail
+                    <select id="logsTail" onchange="refreshLogs()">
+                        <option value="100">100</option>
+                        <option value="200" selected>200</option>
+                        <option value="500">500</option>
+                        <option value="1000">1000</option>
+                    </select>
+                </label>
+
+                <button class="btn btn-secondary btn-xs" onclick="refreshLogs()" title="Refresh logs">Refresh</button>
+                <button class="btn btn-secondary btn-xs" onclick="copyLogs()" title="Copy logs">Copy</button>
+            </div>
+
+            <pre class="logs-output" id="logsOutput"></pre>
         </div>
     </div>
 

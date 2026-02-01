@@ -173,9 +173,15 @@ with app.app_context():
 
 #### Error: Cannot connect to container ports
 
-**Cause:** Container port mapping not configured in DockDash.
+**Cause:** One of the following:
 
-**Solution:** Make sure containers have port mappings:
+- The container does not publish a host port (no port mapping)
+- The service on that port is not HTTP(S) (DockDash will show it as non-clickable `tcp`)
+- The service is HTTP(S) but not reachable from the DockDash container/host (firewall, bind-address, or wrong `HOST_IP`)
+
+**Solutions:**
+
+1. **Confirm the container publishes a host port**
 ```bash
 docker ps --format "table {{.Names}}\t{{.Ports}}"
 ```
@@ -184,6 +190,21 @@ DockDash detects ports from:
 - Container's exposed ports
 - Port bindings in docker-compose
 - Port mappings in docker run
+
+2. **Confirm the service is actually HTTP(S)**
+
+From the Docker host (or from inside the DockDash container), try:
+
+```bash
+curl -I http://<host-ip>:<port>
+curl -Ik https://<host-ip>:<port>
+```
+
+If neither works, the port is not serving HTTP(S) (common for databases, SSH, MQTT, etc.).
+
+3. **Verify `HOST_IP` is correct for LAN links**
+
+If links point to the wrong IP (or you recently changed networks), set `HOST_IP` in `.env` and redeploy.
 
 ---
 

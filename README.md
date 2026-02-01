@@ -11,7 +11,7 @@ A sleek container management dashboard with a nautical theme. Works with both **
 ## ✨ Features
 
 - **📊 Container Dashboard**: View all containers with status, search, sort, and pagination
-- **🔗 Smart Links (HTTP/HTTPS)**: Probes each exposed port and links to the working scheme
+- **🔗 Smart Links (HTTP/HTTPS)**: Probes each exposed host port, picks the working scheme, and only makes true HTTP(S) services clickable (non-web ports show as `tcp`)
 - **🎮 Container Control**: Start, stop, and restart containers from the web UI
 - **📜 Logs Viewer**: View container logs in a modal (tail + follow)
 - **🔐 Secure Login**: Password-protected access (default: admin/dockdash)
@@ -127,6 +127,8 @@ The dashboard displays all Docker containers on the host:
 - **Green badge**: Container is running
 - **Red badge**: Container is stopped/exited
 - **Service links**: Click to open the service in a new tab (DockDash probes HTTP vs HTTPS)
+   - If a port does not respond to HTTP(S), it is shown as a non-clickable `tcp` chip
+   - Seeing both `http` and `https` is expected when they are different ports (e.g., `:80` and `:443`)
 
 **Actions available:**
 - 🔄 **Restart**: Restart a running container
@@ -225,7 +227,7 @@ docker run -d \
 | POST | `/api/container/<id>/stop` | Stop a container |
 | POST | `/api/container/<id>/restart` | Restart a container |
 | GET | `/api/container/<id>/logs` | Fetch container logs (tail + timestamps) |
-| GET | `/api/link/probe` | Probe a host:port and return the working scheme |
+| GET | `/api/link/probe` | Probe a host:port and return whether it's HTTP(S) + the working scheme (host restricted to the configured LAN host/localhost) |
 | GET | `/api/urls` | List all shared URLs |
 | GET | `/health` | Health status (db + docker availability) |
 

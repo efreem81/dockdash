@@ -8,15 +8,15 @@ This document outlines security best practices, known vulnerabilities, and imple
 
 ## Current Security Status
 
-⚠️ **WARNING:** DockDash currently has several security vulnerabilities that must be addressed before production deployment.
+⚠️ **WARNING:** DockDash is designed for trusted LAN use. If you expose it beyond a trusted network, put it behind HTTPS and add additional protections (rate limiting, hardened headers, and network restrictions).
 
 ### Security Checklist
 
-- [ ] CSRF protection enabled
+- [x] CSRF protection enabled
 - [ ] Rate limiting configured
 - [ ] HTTPS enforced
-- [ ] Session timeout configured
-- [ ] Strong SECRET_KEY set
+- [x] Session timeout configured (via `SESSION_LIFETIME_HOURS`)
+- [ ] Strong SECRET_KEY set (recommended)
 - [ ] Audit logging enabled
 - [ ] Regular backups configured
 - [ ] Security headers configured
@@ -89,6 +89,8 @@ sudo ufw allow from 192.168.1.0/24 to any port 8080
 
 ## Implementing CSRF Protection
 
+✅ **Status:** Implemented in `app.py` using Flask-WTF (`CSRFProtect`).
+
 ### Step 1: Install Flask-WTF
 
 ```bash
@@ -108,9 +110,9 @@ from flask_wtf.csrf import CSRFProtect
 # Add after app initialization
 csrf = CSRFProtect(app)
 
-# Configure CSRF
-app.config['WTF_CSRF_TIME_LIMIT'] = None  # No timeout
-app.config['WTF_CSRF_SSL_STRICT'] = True  # Require HTTPS
+# Optional hardening (recommended when running behind HTTPS)
+# app.config['WTF_CSRF_TIME_LIMIT'] = None
+# app.config['WTF_CSRF_SSL_STRICT'] = True
 ```
 
 ### Step 3: Update Templates
