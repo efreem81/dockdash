@@ -7,6 +7,23 @@
     <div class="page-header">
         <h1>🐳 Docker Containers</h1>
         <div class="header-actions">
+            <div class="view-toggle">
+                <button class="view-btn active" id="cardViewBtn" onclick="setView('card')" title="Card View">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                        <rect x="1" y="1" width="6" height="6" rx="1"/>
+                        <rect x="9" y="1" width="6" height="6" rx="1"/>
+                        <rect x="1" y="9" width="6" height="6" rx="1"/>
+                        <rect x="9" y="9" width="6" height="6" rx="1"/>
+                    </svg>
+                </button>
+                <button class="view-btn" id="tableViewBtn" onclick="setView('table')" title="Table View">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                        <rect x="1" y="2" width="14" height="2" rx="0.5"/>
+                        <rect x="1" y="7" width="14" height="2" rx="0.5"/>
+                        <rect x="1" y="12" width="14" height="2" rx="0.5"/>
+                    </svg>
+                </button>
+            </div>
             <label class="toggle-switch">
                 <input type="checkbox" id="showAllToggle" {% if show_all %}checked{% endif %}>
                 <span class="toggle-slider"></span>
@@ -30,10 +47,58 @@
         <span class="container-count">📦 Containers: <strong id="containerCount">{{ containers|length }}</strong></span>
     </div>
 
+    <!-- Search and Controls Bar -->
+    <div class="controls-bar">
+        <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="searchInput" placeholder="Search containers..." autocomplete="off">
+            <button class="search-clear" id="searchClear" onclick="clearSearch()" style="display: none;">✕</button>
+        </div>
+        <div class="sort-controls">
+            <label>Sort by:</label>
+            <select id="sortSelect" onchange="sortContainers()">
+                <option value="name-asc">Name (A-Z)</option>
+                <option value="name-desc">Name (Z-A)</option>
+                <option value="status-asc">Status (Running first)</option>
+                <option value="status-desc">Status (Stopped first)</option>
+                <option value="created-desc">Created (Newest)</option>
+                <option value="created-asc">Created (Oldest)</option>
+            </select>
+        </div>
+        <div class="page-size-controls">
+            <label>Show:</label>
+            <select id="pageSizeSelect" onchange="changePageSize()">
+                <option value="10">10</option>
+                <option value="25" selected>25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="all">All</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Results info and pagination -->
+    <div class="pagination-bar">
+        <div class="results-info">
+            Showing <span id="showingStart">1</span>-<span id="showingEnd">{{ containers|length }}</span> of <span id="totalFiltered">{{ containers|length }}</span> containers
+        </div>
+        <div class="pagination-controls" id="paginationControls">
+            <button class="page-btn" id="prevPage" onclick="changePage(-1)" disabled>← Prev</button>
+            <span class="page-info">Page <span id="currentPage">1</span> of <span id="totalPages">1</span></span>
+            <button class="page-btn" id="nextPage" onclick="changePage(1)">Next →</button>
+        </div>
+    </div>
+
+    <!-- Card View -->
     <div class="container-grid" id="containerGrid">
         {% if containers %}
             {% for container in containers %}
-            <div class="container-card status-{{ container.status }}">
+            <div class="container-card status-{{ container.status }}" 
+                 data-name="{{ container.name|lower }}"
+                 data-status="{{ container.status }}"
+                 data-image="{{ container.image|lower }}"
+                 data-created="{{ container.created }}"
+                 data-id="{{ container.id }}">
                 <div class="container-header">
                     <h3 class="container-name">{{ container.name }}</h3>
                     <span class="status-badge status-{{ container.status }}">{{ container.status }}</span>
@@ -88,6 +153,98 @@
                 </div>
             </div>
             {% endfor %}
+        {% endif %}
+        <div class="empty-state" id="emptyState" style="display: none;">
+            <span class="empty-icon">📦</span>
+            <h3 id="emptyStateTitle">No containers found</h3>
+            <p id="emptyStateText">{% if show_all %}There are no Docker containers on this host.{% else %}There are no running containers. Toggle "Show stopped containers" to see all.{% endif %}</p>
+        </div>
+        <div class="empty-state" id="noResultsState" style="display: none;">
+            <span class="empty-icon">🔍</span>
+            <h3>No matching containers</h3>
+            <p>Try adjusting your search terms.</p>
+        </div>
+    </div>
+
+    <!-- Table View -->
+    <div class="container-table-wrapper" id="containerTable" style="display: none;">
+        {% if containers %}
+        <table class="container-table">
+            <thead>
+                <tr>
+                    <th class="sortable" data-sort="name" onclick="sortByColumn('name')">
+                        Container <span class="sort-icon" id="sort-name">↕</span>
+                    </th>
+                    <th class="sortable" data-sort="status" onclick="sortByColumn('status')">
+                        Status <span class="sort-icon" id="sort-status">↕</span>
+                    </th>
+                    <th class="sortable" data-sort="image" onclick="sortByColumn('image')">
+                        Image <span class="sort-icon" id="sort-image">↕</span>
+                    </th>
+                    <th>Ports</th>
+                    <th>Links</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody">
+                {% for container in containers %}
+                <tr class="status-row-{{ container.status }}"
+                    data-name="{{ container.name|lower }}"
+                    data-status="{{ container.status }}"
+                    data-image="{{ container.image|lower }}"
+                    data-created="{{ container.created }}"
+                    data-id="{{ container.id }}">
+                    <td class="cell-name">
+                        <strong>{{ container.name }}</strong>
+                        <span class="cell-id">{{ container.id }}</span>
+                    </td>
+                    <td>
+                        <span class="status-badge status-{{ container.status }}">{{ container.status }}</span>
+                    </td>
+                    <td class="cell-image">{{ container.image }}</td>
+                    <td class="cell-ports">
+                        {% if container.ports %}
+                            {% for port in container.ports %}
+                                <span class="port-badge">{{ port.host_port }}</span>
+                            {% endfor %}
+                        {% else %}
+                            <span class="no-ports-badge">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="cell-links">
+                        {% if container.ports %}
+                            {% for port in container.ports %}
+                                <a href="{{ port.url }}" target="_blank" class="table-link" title="{{ port.url }}">
+                                    :{{ port.host_port }} 🔗
+                                </a>
+                            {% endfor %}
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                    <td class="cell-actions">
+                        {% if container.status == 'running' %}
+                        <button class="btn btn-warning btn-xs" onclick="restartContainer('{{ container.id }}', '{{ container.name }}')" title="Restart">
+                            🔄
+                        </button>
+                        <button class="btn btn-danger btn-xs" onclick="stopContainer('{{ container.id }}', '{{ container.name }}')" title="Stop">
+                            ⏹️
+                        </button>
+                        {% else %}
+                        <button class="btn btn-success btn-xs" onclick="startContainer('{{ container.id }}', '{{ container.name }}')" title="Start">
+                            ▶️
+                        </button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div class="empty-state" id="tableNoResults" style="display: none;">
+            <span class="empty-icon">🔍</span>
+            <h3>No matching containers</h3>
+            <p>Try adjusting your search terms.</p>
+        </div>
         {% else %}
             <div class="empty-state">
                 <span class="empty-icon">📦</span>
@@ -96,12 +253,327 @@
             </div>
         {% endif %}
     </div>
+
+    <!-- Bottom pagination -->
+    <div class="pagination-bar bottom" id="bottomPagination">
+        <div class="pagination-controls">
+            <button class="page-btn" id="prevPageBottom" onclick="changePage(-1)" disabled>← Prev</button>
+            <span class="page-info">Page <span id="currentPageBottom">1</span> of <span id="totalPagesBottom">1</span></span>
+            <button class="page-btn" id="nextPageBottom" onclick="changePage(1)">Next →</button>
+        </div>
+    </div>
 </div>
 
 {% endblock %}
 
 {% block scripts %}
 <script>
+// State management
+let currentView = 'card';
+let currentPage = 1;
+let pageSize = 25;
+let sortField = 'name';
+let sortDirection = 'asc';
+let searchTerm = '';
+let allContainers = [];
+let filteredContainers = [];
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+    // Gather all containers from DOM
+    const cards = document.querySelectorAll('.container-card[data-name]');
+    cards.forEach(card => {
+        allContainers.push({
+            element: card,
+            name: card.dataset.name,
+            status: card.dataset.status,
+            image: card.dataset.image,
+            created: card.dataset.created,
+            id: card.dataset.id
+        });
+    });
+    
+    // Restore saved preferences
+    const savedView = localStorage.getItem('dockdash-view');
+    const savedPageSize = localStorage.getItem('dockdash-pageSize');
+    const savedSort = localStorage.getItem('dockdash-sort');
+    
+    if (savedView === 'table') {
+        setView('table');
+    }
+    if (savedPageSize) {
+        pageSize = savedPageSize === 'all' ? 'all' : parseInt(savedPageSize);
+        document.getElementById('pageSizeSelect').value = savedPageSize;
+    }
+    if (savedSort) {
+        const [field, dir] = savedSort.split('-');
+        sortField = field;
+        sortDirection = dir;
+        document.getElementById('sortSelect').value = savedSort;
+    }
+    
+    // Initial render
+    filteredContainers = [...allContainers];
+    applySort();
+    renderContainers();
+    
+    // Setup search input
+    const searchInput = document.getElementById('searchInput');
+    searchInput.addEventListener('input', debounce(function() {
+        searchTerm = this.value.toLowerCase().trim();
+        document.getElementById('searchClear').style.display = searchTerm ? 'block' : 'none';
+        currentPage = 1;
+        filterContainers();
+        renderContainers();
+    }, 200));
+    
+    // Keyboard shortcut for search
+    document.addEventListener('keydown', function(e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+            e.preventDefault();
+            searchInput.focus();
+        }
+        if (e.key === 'Escape' && document.activeElement === searchInput) {
+            clearSearch();
+            searchInput.blur();
+        }
+    });
+});
+
+// Debounce helper
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func.apply(this, args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+// View toggle functionality
+function setView(view) {
+    currentView = view;
+    const cardView = document.getElementById('containerGrid');
+    const tableView = document.getElementById('containerTable');
+    const cardBtn = document.getElementById('cardViewBtn');
+    const tableBtn = document.getElementById('tableViewBtn');
+    
+    if (view === 'table') {
+        cardView.style.display = 'none';
+        tableView.style.display = 'block';
+        cardBtn.classList.remove('active');
+        tableBtn.classList.add('active');
+    } else {
+        cardView.style.display = 'grid';
+        tableView.style.display = 'none';
+        cardBtn.classList.add('active');
+        tableBtn.classList.remove('active');
+    }
+    localStorage.setItem('dockdash-view', view);
+    renderContainers();
+}
+
+// Search functionality
+function clearSearch() {
+    document.getElementById('searchInput').value = '';
+    document.getElementById('searchClear').style.display = 'none';
+    searchTerm = '';
+    currentPage = 1;
+    filterContainers();
+    renderContainers();
+}
+
+function filterContainers() {
+    if (!searchTerm) {
+        filteredContainers = [...allContainers];
+    } else {
+        filteredContainers = allContainers.filter(c => 
+            c.name.includes(searchTerm) || 
+            c.image.includes(searchTerm) ||
+            c.status.includes(searchTerm) ||
+            c.id.includes(searchTerm)
+        );
+    }
+    applySort();
+}
+
+// Sort functionality
+function sortContainers() {
+    const value = document.getElementById('sortSelect').value;
+    const [field, dir] = value.split('-');
+    sortField = field;
+    sortDirection = dir;
+    localStorage.setItem('dockdash-sort', value);
+    applySort();
+    renderContainers();
+}
+
+function sortByColumn(field) {
+    if (sortField === field) {
+        sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortField = field;
+        sortDirection = 'asc';
+    }
+    
+    // Update dropdown
+    const sortValue = `${field}-${sortDirection}`;
+    const select = document.getElementById('sortSelect');
+    const option = select.querySelector(`option[value="${sortValue}"]`);
+    if (option) {
+        select.value = sortValue;
+    }
+    
+    localStorage.setItem('dockdash-sort', sortValue);
+    applySort();
+    renderContainers();
+    updateSortIcons();
+}
+
+function applySort() {
+    filteredContainers.sort((a, b) => {
+        let valA, valB;
+        
+        if (sortField === 'status') {
+            // Custom sort: running first or last
+            const statusOrder = { 'running': 0, 'paused': 1, 'exited': 2, 'stopped': 2 };
+            valA = statusOrder[a.status] ?? 3;
+            valB = statusOrder[b.status] ?? 3;
+        } else if (sortField === 'created') {
+            valA = a.created;
+            valB = b.created;
+        } else {
+            valA = a[sortField] || '';
+            valB = b[sortField] || '';
+        }
+        
+        if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+        if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+        return 0;
+    });
+}
+
+function updateSortIcons() {
+    document.querySelectorAll('.sort-icon').forEach(icon => {
+        icon.textContent = '↕';
+        icon.classList.remove('active');
+    });
+    
+    const activeIcon = document.getElementById(`sort-${sortField}`);
+    if (activeIcon) {
+        activeIcon.textContent = sortDirection === 'asc' ? '↑' : '↓';
+        activeIcon.classList.add('active');
+    }
+}
+
+// Pagination functionality
+function changePageSize() {
+    const value = document.getElementById('pageSizeSelect').value;
+    pageSize = value === 'all' ? 'all' : parseInt(value);
+    localStorage.setItem('dockdash-pageSize', value);
+    currentPage = 1;
+    renderContainers();
+}
+
+function changePage(delta) {
+    const totalPages = getTotalPages();
+    currentPage = Math.max(1, Math.min(totalPages, currentPage + delta));
+    renderContainers();
+}
+
+function getTotalPages() {
+    if (pageSize === 'all') return 1;
+    return Math.ceil(filteredContainers.length / pageSize);
+}
+
+function getPagedContainers() {
+    if (pageSize === 'all') return filteredContainers;
+    const start = (currentPage - 1) * pageSize;
+    return filteredContainers.slice(start, start + pageSize);
+}
+
+// Render containers
+function renderContainers() {
+    const pagedContainers = getPagedContainers();
+    const totalPages = getTotalPages();
+    const total = filteredContainers.length;
+    
+    // Update pagination info
+    const start = total === 0 ? 0 : (currentPage - 1) * (pageSize === 'all' ? total : pageSize) + 1;
+    const end = pageSize === 'all' ? total : Math.min(currentPage * pageSize, total);
+    
+    document.getElementById('showingStart').textContent = start;
+    document.getElementById('showingEnd').textContent = end;
+    document.getElementById('totalFiltered').textContent = total;
+    document.getElementById('currentPage').textContent = currentPage;
+    document.getElementById('totalPages').textContent = totalPages;
+    document.getElementById('currentPageBottom').textContent = currentPage;
+    document.getElementById('totalPagesBottom').textContent = totalPages;
+    
+    // Update button states
+    const prevDisabled = currentPage <= 1;
+    const nextDisabled = currentPage >= totalPages;
+    document.getElementById('prevPage').disabled = prevDisabled;
+    document.getElementById('nextPage').disabled = nextDisabled;
+    document.getElementById('prevPageBottom').disabled = prevDisabled;
+    document.getElementById('nextPageBottom').disabled = nextDisabled;
+    
+    // Show/hide pagination if not needed
+    const paginationNeeded = totalPages > 1;
+    document.getElementById('paginationControls').style.visibility = paginationNeeded ? 'visible' : 'hidden';
+    document.getElementById('bottomPagination').style.display = paginationNeeded ? 'flex' : 'none';
+    
+    // Get set of visible container IDs
+    const visibleIds = new Set(pagedContainers.map(c => c.id));
+    
+    // Render card view
+    const cardGrid = document.getElementById('containerGrid');
+    const cards = cardGrid.querySelectorAll('.container-card[data-id]');
+    cards.forEach(card => {
+        card.style.display = visibleIds.has(card.dataset.id) ? '' : 'none';
+    });
+    
+    // Render table view
+    const tableBody = document.getElementById('tableBody');
+    if (tableBody) {
+        const rows = tableBody.querySelectorAll('tr[data-id]');
+        rows.forEach(row => {
+            row.style.display = visibleIds.has(row.dataset.id) ? '' : 'none';
+        });
+    }
+    
+    // Show/hide empty states
+    const hasResults = pagedContainers.length > 0;
+    const hasContainers = allContainers.length > 0;
+    
+    document.getElementById('emptyState').style.display = (!hasContainers && !searchTerm) ? 'flex' : 'none';
+    document.getElementById('noResultsState').style.display = (!hasResults && searchTerm) ? 'flex' : 'none';
+    
+    const tableNoResults = document.getElementById('tableNoResults');
+    if (tableNoResults) {
+        tableNoResults.style.display = (!hasResults && searchTerm) ? 'flex' : 'none';
+    }
+    
+    // Reorder DOM elements to match sort order
+    if (currentView === 'card') {
+        pagedContainers.forEach(c => {
+            const card = cardGrid.querySelector(`.container-card[data-id="${c.id}"]`);
+            if (card) cardGrid.appendChild(card);
+        });
+    } else if (tableBody) {
+        pagedContainers.forEach(c => {
+            const row = tableBody.querySelector(`tr[data-id="${c.id}"]`);
+            if (row) tableBody.appendChild(row);
+        });
+    }
+    
+    updateSortIcons();
+}
+
+// Existing functionality
 document.getElementById('showAllToggle').addEventListener('change', function() {
     const showAll = this.checked;
     window.location.href = '/dashboard?show_all=' + showAll;
