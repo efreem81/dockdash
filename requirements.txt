@@ -8,3 +8,5 @@ gunicorn==21.2.0
 # Pin requests to fix docker SDK compatibility with http+docker scheme
 requests>=2.26.0,<2.32.0
 urllib3>=1.26.0,<2.0.0
+# APScheduler for background monitoring (optional - for advanced scheduling)
+# apscheduler==3.10.4

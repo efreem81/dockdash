@@ -16,6 +16,19 @@ services:
       - DOCKDASH_PORT=${DOCKDASH_PORT:-9999}
       # Set HOST_IP to your server's LAN IP for correct container URLs
       - HOST_IP=${HOST_IP:-}
+      # Session configuration
+      - SESSION_LIFETIME_HOURS=${SESSION_LIFETIME_HOURS:-12}
+      - SESSION_COOKIE_SECURE=${SESSION_COOKIE_SECURE:-0}
+      # Auto-start background monitoring
+      - AUTO_START_MONITORING=${AUTO_START_MONITORING:-0}
     # Run as root to access Docker socket (or use group_add for non-root)
     user: root
     restart: unless-stopped
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
