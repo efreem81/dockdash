@@ -107,10 +107,32 @@ def start_monitoring():
         interval_seconds=30
     )
     
+    # Add scheduled scan check (checks every minute if it's time to run)
+    scheduler.add_job(
+        'scheduled_scans',
+        run_scheduled_tasks,
+        interval_seconds=60
+    )
+    
     scheduler.start()
     _is_running = True
     
     return {'success': True, 'message': 'Monitoring started'}
+
+
+def run_scheduled_tasks():
+    """Run scheduled vulnerability scans and update checks if due."""
+    try:
+        from services.vulnerability_service import run_scheduled_scan_if_due
+        run_scheduled_scan_if_due()
+    except Exception as e:
+        print(f"Scheduled scan check failed: {e}")
+    
+    try:
+        from services.update_service import run_scheduled_check_if_due
+        run_scheduled_check_if_due()
+    except Exception as e:
+        print(f"Scheduled update check failed: {e}")
 
 
 def stop_monitoring():

@@ -259,6 +259,132 @@ async function deleteWebhook(id) {
 }
 
 // =============================================================================
+// Image Update Check Functions
+// =============================================================================
+
+async function loadUpdateCheckStatus() {
+    try {
+        const response = await fetch('/api/updates/settings');
+        const data = await response.json();
+        
+        const indicator = document.getElementById('updateCheckIndicator');
+        const statusText = document.getElementById('updateCheckStatusText');
+        const lastCheckInfo = document.getElementById('lastUpdateCheckInfo');
+        
+        if (indicator) indicator.textContent = '✅';
+        if (statusText) statusText.textContent = 'Update checks available';
+        
+        if (data.success && data.settings) {
+            loadUpdateSettings(data.settings);
+            if (data.settings.last_check_completed) {
+                const lastCheck = new Date(data.settings.last_check_completed);
+                const imagesCount = data.settings.last_check_images_count || 0;
+                const updatesFound = data.settings.images_with_updates || 0;
+                if (lastCheckInfo) {
+                    lastCheckInfo.textContent = `Last check: ${lastCheck.toLocaleString()} (${imagesCount} images, ${updatesFound} updates)`;
+                }
+            } else if (lastCheckInfo) {
+                lastCheckInfo.textContent = 'No checks completed yet';
+            }
+        }
+    } catch (error) {
+        const statusText = document.getElementById('updateCheckStatusText');
+        if (statusText) statusText.textContent = '❌ Failed to load update check status';
+    }
+}
+
+function loadUpdateSettings(settings) {
+    const updateEnabled = document.getElementById('updateCheckEnabled');
+    const scheduleType = document.getElementById('updateScheduleType');
+    const scheduleHour = document.getElementById('updateScheduleHour');
+    const scheduleMinute = document.getElementById('updateScheduleMinute');
+    const scheduleDay = document.getElementById('updateScheduleDay');
+    
+    if (updateEnabled) updateEnabled.checked = settings.enabled || false;
+    if (scheduleType) scheduleType.value = settings.schedule_type || 'daily';
+    if (scheduleHour) scheduleHour.value = settings.schedule_hour ?? 4;
+    if (scheduleMinute) scheduleMinute.value = settings.schedule_minute ?? 0;
+    if (scheduleDay) scheduleDay.value = settings.schedule_day ?? 0;
+    
+    updateUpdateScheduleUI();
+}
+
+function updateUpdateScheduleUI() {
+    const scheduleType = document.getElementById('updateScheduleType');
+    const dayGroup = document.getElementById('updateDayGroup');
+    if (scheduleType && dayGroup) {
+        dayGroup.style.display = scheduleType.value === 'weekly' ? 'block' : 'none';
+    }
+}
+
+function updateUpdateSchedule() {
+    // Just update UI when checkbox is toggled
+    updateUpdateScheduleUI();
+}
+
+async function saveUpdateSettings() {
+    const data = {
+        enabled: document.getElementById('updateCheckEnabled')?.checked || false,
+        schedule_type: document.getElementById('updateScheduleType')?.value || 'daily',
+        schedule_hour: parseInt(document.getElementById('updateScheduleHour')?.value || 4),
+        schedule_minute: parseInt(document.getElementById('updateScheduleMinute')?.value || 0),
+        schedule_day: parseInt(document.getElementById('updateScheduleDay')?.value || 0)
+    };
+    
+    try {
+        const response = await fetch('/api/updates/settings', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...csrfHeaders()
+            },
+            body: JSON.stringify(data)
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            showToast('success', 'Update check settings saved');
+        } else {
+            showToast('error', result.error || 'Failed to save settings');
+        }
+    } catch (error) {
+        showToast('error', 'Failed to save settings');
+    }
+}
+
+async function runUpdateCheck() {
+    const btn = document.getElementById('runUpdateCheckBtn');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '⏳ Checking...';
+    btn.disabled = true;
+    
+    try {
+        const response = await fetch('/api/updates/check-all', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...csrfHeaders()
+            },
+            body: JSON.stringify({})
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            const msg = `Checked ${result.images_checked} images. ${result.updates_found} update(s) available.`;
+            showToast('success', msg);
+            loadUpdateCheckStatus();
+        } else {
+            showToast('error', result.error || 'Failed to check updates');
+        }
+    } catch (error) {
+        showToast('error', 'Failed to check updates');
+    } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
+}
+
+// =============================================================================
 // Vulnerability Scanning Functions
 // =============================================================================
 
@@ -310,6 +436,7 @@ function loadScanSettings(settings) {
     const scheduleMinute = document.getElementById('scheduleMinute');
     const scheduleDay = document.getElementById('scheduleDay');
     const severityFilter = document.getElementById('severityFilter');
+    const logLevel = document.getElementById('logLevel');
     
     if (scanEnabled) scanEnabled.checked = settings.enabled || false;
     if (scheduleType) scheduleType.value = settings.schedule_type || 'daily';
@@ -317,6 +444,7 @@ function loadScanSettings(settings) {
     if (scheduleMinute) scheduleMinute.value = settings.schedule_minute ?? 0;
     if (scheduleDay) scheduleDay.value = settings.schedule_day ?? 0;
     if (severityFilter) severityFilter.value = settings.severity_filter || 'CRITICAL,HIGH,MEDIUM,LOW';
+    if (logLevel) logLevel.value = settings.log_level || 'INFO';
     
     updateScheduleUI();
 }
@@ -336,7 +464,8 @@ async function saveScanSettings() {
         schedule_hour: parseInt(document.getElementById('scheduleHour')?.value || 3),
         schedule_minute: parseInt(document.getElementById('scheduleMinute')?.value || 0),
         schedule_day: parseInt(document.getElementById('scheduleDay')?.value || 0),
-        severity_filter: document.getElementById('severityFilter')?.value || 'CRITICAL,HIGH,MEDIUM,LOW'
+        severity_filter: document.getElementById('severityFilter')?.value || 'CRITICAL,HIGH,MEDIUM,LOW',
+        log_level: document.getElementById('logLevel')?.value || 'INFO'
     };
     
     try {
@@ -348,7 +477,7 @@ async function saveScanSettings() {
         const result = await response.json();
         
         if (result.success) {
-            showToast('success', 'Scan schedule saved');
+            showToast('success', 'Scan settings saved');
         } else {
             showToast('error', result.error || 'Failed to save settings');
         }
@@ -628,4 +757,5 @@ document.addEventListener('DOMContentLoaded', function() {
     loadWebhooks();
     loadMonitoringStatus();
     loadScannerStatus();
+    loadUpdateCheckStatus();
 });

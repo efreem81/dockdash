@@ -32,6 +32,9 @@
             <button class="btn btn-secondary" onclick="checkAllImageUpdates()" id="checkUpdatesBtn" title="Check for image updates">
                 ⬆️ Check Updates
             </button>
+            <button class="btn btn-success" onclick="updateAllContainers()" id="updateAllBtn" style="display: {{ 'inline-flex' if updates_count > 0 else 'none' }};" title="Update all containers with available updates">
+                ⬆️ Update All (<span id="updateAllCount">{{ updates_count }}</span>)
+            </button>
             <button class="btn btn-secondary" onclick="scanAllVulnerabilities()" id="scanVulnBtn" title="Scan all images for security vulnerabilities">
                 🛡️ Security Scan
             </button>
@@ -55,14 +58,51 @@
         <span class="vuln-summary" id="vulnSummary">
             {% set total_critical = vuln_results.values()|selectattr('critical')|map(attribute='critical')|sum %}
             {% set total_high = vuln_results.values()|selectattr('high')|map(attribute='high')|sum %}
-            {% if total_critical > 0 or total_high > 0 %}
-            🛡️ CVEs: <strong class="{% if total_critical > 0 %}text-critical{% else %}text-high{% endif %}">{{ total_critical }}C / {{ total_high }}H</strong>
+            {% set total_medium = vuln_results.values()|selectattr('medium')|map(attribute='medium')|sum %}
+            {% set total_low = vuln_results.values()|selectattr('low')|map(attribute='low')|sum %}
+            {% if total_critical > 0 or total_high > 0 or total_medium > 0 or total_low > 0 %}
+            🛡️ Security: <strong class="{% if total_critical > 0 %}text-critical{% elif total_high > 0 %}text-high{% else %}text-medium{% endif %}">{{ total_critical }}C / {{ total_high }}H / {{ total_medium }}M / {{ total_low }}L</strong>
             {% elif vuln_results|length > 0 %}
-            🛡️ <strong class="text-ok">No critical/high CVEs</strong>
+            🛡️ <strong class="text-ok">All clear!</strong>
             {% else %}
             🛡️ <span class="text-muted">Not scanned</span>
             {% endif %}
         </span>
+    </div>
+
+    <!-- Filter Bar -->
+    <div class="filter-bar" id="filterBar">
+        <div class="filter-group">
+            <span class="filter-label">Filter:</span>
+            <label class="filter-checkbox">
+                <input type="checkbox" id="filterHasUpdate" onchange="applyFilters()">
+                <span class="filter-tag filter-update">⬆️ Has Update</span>
+            </label>
+            <label class="filter-checkbox">
+                <input type="checkbox" id="filterHasVuln" onchange="applyFilters()">
+                <span class="filter-tag filter-vuln">🛡️ Has Issues</span>
+            </label>
+        </div>
+        <div class="filter-group filter-severity-group" id="severityFilters" style="display: none;">
+            <span class="filter-label">Severity:</span>
+            <label class="filter-checkbox">
+                <input type="checkbox" id="filterCritical" checked onchange="applyFilters()">
+                <span class="filter-tag severity-critical">Critical</span>
+            </label>
+            <label class="filter-checkbox">
+                <input type="checkbox" id="filterHigh" checked onchange="applyFilters()">
+                <span class="filter-tag severity-high">High</span>
+            </label>
+            <label class="filter-checkbox">
+                <input type="checkbox" id="filterMedium" onchange="applyFilters()">
+                <span class="filter-tag severity-medium">Medium</span>
+            </label>
+            <label class="filter-checkbox">
+                <input type="checkbox" id="filterLow" onchange="applyFilters()">
+                <span class="filter-tag severity-low">Low</span>
+            </label>
+        </div>
+        <button class="btn btn-xs btn-secondary" id="clearFiltersBtn" onclick="clearFilters()" style="display: none;">Clear Filters</button>
     </div>
 
     <!-- Search and Controls Bar -->
@@ -122,22 +162,31 @@
                  data-image-full="{{ container.image }}"
                  data-created="{{ container.created }}"
                  data-compose-project="{{ container.compose_project or '' }}"
-                 data-id="{{ container.id }}">
+                 data-id="{{ container.id }}"
+                 data-has-update="{{ 'true' if container.has_update else 'false' }}"
+                 data-vuln-critical="{{ container.vulnerabilities.critical if container.vulnerabilities else 0 }}"
+                 data-vuln-high="{{ container.vulnerabilities.high if container.vulnerabilities else 0 }}"
+                 data-vuln-medium="{{ container.vulnerabilities.medium if container.vulnerabilities else 0 }}"
+                 data-vuln-low="{{ container.vulnerabilities.low if container.vulnerabilities else 0 }}"
+                 data-vuln-total="{{ container.vulnerabilities.total if container.vulnerabilities else 0 }}">
                 <div class="container-header">
                     <h3 class="container-name">{{ container.name }}</h3>
                     <div class="header-badges">
-                        {% if container.vulnerabilities %}
-                        <span class="vuln-badge {% if container.vulnerabilities.critical > 0 %}vuln-critical{% elif container.vulnerabilities.high > 0 %}vuln-high{% elif container.vulnerabilities.medium > 0 %}vuln-medium{% else %}vuln-low{% endif %}" 
-                              title="Vulnerabilities: {{ container.vulnerabilities.critical }} Critical, {{ container.vulnerabilities.high }} High, {{ container.vulnerabilities.medium }} Medium, {{ container.vulnerabilities.low }} Low">
-                            🛡️ {% if container.vulnerabilities.critical > 0 %}{{ container.vulnerabilities.critical }}C{% endif %}{% if container.vulnerabilities.high > 0 %} {{ container.vulnerabilities.high }}H{% endif %}{% if container.vulnerabilities.critical == 0 and container.vulnerabilities.high == 0 and container.vulnerabilities.total > 0 %}{{ container.vulnerabilities.total }}{% endif %}{% if container.vulnerabilities.total == 0 %}✓{% endif %}
-                        </span>
+                        {% if container.vulnerabilities and container.vulnerabilities.total > 0 %}
+                        <button class="vuln-badge-btn {% if container.vulnerabilities.critical > 0 %}vuln-critical{% elif container.vulnerabilities.high > 0 %}vuln-high{% elif container.vulnerabilities.medium > 0 %}vuln-medium{% else %}vuln-low{% endif %}" 
+                              onclick="showVulnerabilities('{{ container.image }}', '{{ container.name }}')"
+                              title="Click for vulnerability details">
+                            🛡️ {{ container.vulnerabilities.critical }}C/{{ container.vulnerabilities.high }}H/{{ container.vulnerabilities.medium }}M/{{ container.vulnerabilities.low }}L
+                        </button>
+                        {% elif container.vulnerabilities %}
+                        <span class="vuln-badge vuln-clean" title="No vulnerabilities found">🛡️ ✓</span>
                         {% endif %}
                         {% if container.health_status %}
                         <span class="health-badge health-{{ container.health_status }}" title="Health: {{ container.health_status }}">
                             {% if container.health_status == 'healthy' %}💚{% elif container.health_status == 'unhealthy' %}❤️{% else %}💛{% endif %}
                         </span>
                         {% endif %}
-                        <span class="update-badge" data-image="{{ container.image }}" style="display: none;" title="Update available">
+                        <span class="update-badge" data-image="{{ container.image }}" style="display: {{ 'inline-flex' if container.has_update else 'none' }};" title="Update available">
                             ⬆️ Update
                         </span>
                         <span class="status-badge status-{{ container.status }}">{{ container.status }}</span>
@@ -252,6 +301,9 @@
                     <button class="btn btn-info btn-sm" onclick="recreateContainer('{{ container.id }}', '{{ container.name }}')" title="Recreate (pull latest & restart)">
                         🔃
                     </button>
+                    <button class="btn btn-success btn-sm update-container-btn" onclick="updateContainer('{{ container.id }}', '{{ container.name }}')" title="Update to latest image" style="display: {{ 'inline-flex' if container.has_update else 'none' }};">
+                        ⬆️ Update
+                    </button>
                 </div>
             </div>
             {% endfor %}
@@ -283,6 +335,7 @@
                     <th class="sortable" data-sort="image" onclick="sortByColumn('image')">
                         Image <span class="sort-icon" id="sort-image">↕</span>
                     </th>
+                    <th>Security</th>
                     <th>Actions</th>
                     <th>Links</th>
                 </tr>
@@ -295,7 +348,13 @@
                     data-image="{{ container.image|lower }}"
                     data-image-full="{{ container.image }}"
                     data-created="{{ container.created }}"
-                    data-id="{{ container.id }}">
+                    data-id="{{ container.id }}"
+                    data-has-update="{{ 'true' if container.has_update else 'false' }}"
+                    data-vuln-critical="{{ container.vulnerabilities.critical if container.vulnerabilities else 0 }}"
+                    data-vuln-high="{{ container.vulnerabilities.high if container.vulnerabilities else 0 }}"
+                    data-vuln-medium="{{ container.vulnerabilities.medium if container.vulnerabilities else 0 }}"
+                    data-vuln-low="{{ container.vulnerabilities.low if container.vulnerabilities else 0 }}"
+                    data-vuln-total="{{ container.vulnerabilities.total if container.vulnerabilities else 0 }}">
                     <td class="cell-name">
                         <strong>{{ container.name }}</strong>
                     </td>
@@ -305,9 +364,22 @@
                     <td class="cell-image">
                         <span class="image-value" data-image="{{ container.image }}">
                             {{ container.image }}{% if container.image_digest %}<span class="image-digest" title="sha256:{{ container.image_digest }}...">@{{ container.image_digest }}</span>{% endif %}
-                            <span class="update-badge table-update-badge" style="display: none;" title="Update available">⬆️</span>
+                            <span class="update-badge table-update-badge" style="display: {{ 'inline' if container.has_update else 'none' }};" title="Update available">⬆️</span>
                             {% if container.image_age %}<span class="image-age-badge" title="Image created: {{ container.image_created }}">{{ container.image_age }}</span>{% endif %}
                         </span>
+                    </td>
+                    <td class="cell-security">
+                        {% if container.vulnerabilities and container.vulnerabilities.total > 0 %}
+                        <button class="vuln-badge-btn vuln-badge-compact {% if container.vulnerabilities.critical > 0 %}vuln-critical{% elif container.vulnerabilities.high > 0 %}vuln-high{% elif container.vulnerabilities.medium > 0 %}vuln-medium{% else %}vuln-low{% endif %}" 
+                              onclick="showVulnerabilities('{{ container.image }}', '{{ container.name }}')"
+                              title="Click for vulnerability details">
+                            {{ container.vulnerabilities.critical }}C/{{ container.vulnerabilities.high }}H/{{ container.vulnerabilities.medium }}M/{{ container.vulnerabilities.low }}L
+                        </button>
+                        {% elif container.vulnerabilities %}
+                        <span class="vuln-badge vuln-clean" title="No vulnerabilities found">✓</span>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
                     </td>
                     <td class="cell-actions">
                         {% if container.status == 'running' %}
@@ -432,6 +504,59 @@
                     <button class="tab-btn" onclick="showInspectTab('labels')">Labels</button>
                 </div>
                 <div class="inspect-tab-content" id="inspectTabContent"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Vulnerability Details Modal -->
+    <div class="modal-overlay" id="vulnModal" style="display: none;" onclick="closeVulnModal(event)">
+        <div class="modal modal-xl" role="dialog" aria-modal="true" aria-label="Vulnerability details" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <div class="modal-title" id="vulnModalTitle">🛡️ Security Scan Results</div>
+                <button class="modal-close" onclick="closeVulnModal()" aria-label="Close">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="vuln-summary-bar" id="vulnSummaryBar">
+                    <!-- Summary stats go here -->
+                </div>
+                <div class="vuln-filters">
+                    <label class="filter-checkbox">
+                        <input type="checkbox" id="vulnFilterCritical" checked onchange="filterVulnTable()">
+                        <span class="filter-tag severity-critical">Critical</span>
+                    </label>
+                    <label class="filter-checkbox">
+                        <input type="checkbox" id="vulnFilterHigh" checked onchange="filterVulnTable()">
+                        <span class="filter-tag severity-high">High</span>
+                    </label>
+                    <label class="filter-checkbox">
+                        <input type="checkbox" id="vulnFilterMedium" onchange="filterVulnTable()">
+                        <span class="filter-tag severity-medium">Medium</span>
+                    </label>
+                    <label class="filter-checkbox">
+                        <input type="checkbox" id="vulnFilterLow" onchange="filterVulnTable()">
+                        <span class="filter-tag severity-low">Low</span>
+                    </label>
+                    <input type="text" id="vulnSearch" placeholder="Search packages..." class="vuln-search" oninput="filterVulnTable()">
+                </div>
+                <div class="vuln-table-container">
+                    <table class="vuln-table" id="vulnTable">
+                        <thead>
+                            <tr>
+                                <th>Severity</th>
+                                <th>CVE ID</th>
+                                <th>Package</th>
+                                <th>Installed</th>
+                                <th>Fixed In</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody id="vulnTableBody">
+                        </tbody>
+                    </table>
+                    <div class="vuln-empty" id="vulnEmpty" style="display: none;">
+                        No vulnerabilities match your filters.
+                    </div>
+                </div>
             </div>
         </div>
     </div>

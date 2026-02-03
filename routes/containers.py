@@ -175,8 +175,83 @@ def api_recreate_container(container_id):
     pull_latest = data.get('pull_latest', True)
     
     result = recreate_container(container_id, pull_latest=pull_latest)
+    
+    # Clear update status for this image since we just updated
+    if result.get('success') and result.get('image'):
+        from services.update_service import clear_update_status
+        clear_update_status(result['image'])
+    
     status = 200 if result['success'] else 500
     return jsonify(result), status
+
+
+@containers_bp.route('/containers/update-all', methods=['POST'])
+@login_required
+def api_update_all_containers():
+    """Update all containers that have available updates."""
+    from services.update_service import get_stored_updates, clear_update_status
+    from services.docker_service import list_containers
+    
+    data = request.get_json() or {}
+    container_ids = data.get('container_ids', [])  # Optional: specific containers to update
+    
+    # Get containers and their update status
+    containers = list_containers()
+    stored_updates = get_stored_updates()
+    
+    results = []
+    success_count = 0
+    error_count = 0
+    
+    for container in containers:
+        container_id = container.get('id')
+        container_name = container.get('name')
+        image = container.get('image')
+        
+        # If specific containers requested, filter
+        if container_ids and container_id not in container_ids and container_name not in container_ids:
+            continue
+        
+        # Check if this container has an update
+        update_info = stored_updates.get(image, {})
+        if not update_info.get('has_update'):
+            continue
+        
+        # Try to recreate
+        try:
+            result = recreate_container(container_id, pull_latest=True)
+            if result.get('success'):
+                success_count += 1
+                clear_update_status(image)
+                results.append({
+                    'container': container_name,
+                    'image': image,
+                    'success': True,
+                    'message': result.get('message')
+                })
+            else:
+                error_count += 1
+                results.append({
+                    'container': container_name,
+                    'image': image,
+                    'success': False,
+                    'error': result.get('error')
+                })
+        except Exception as e:
+            error_count += 1
+            results.append({
+                'container': container_name,
+                'image': image,
+                'success': False,
+                'error': str(e)
+            })
+    
+    return jsonify({
+        'success': error_count == 0,
+        'updated': success_count,
+        'errors': error_count,
+        'results': results
+    })
 
 
 @containers_bp.route('/link/probe')

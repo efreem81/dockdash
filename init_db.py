@@ -49,6 +49,9 @@ def init_database():
             db.create_all()
             print("Database tables created successfully")
             
+            # Run migrations for new columns
+            _run_migrations(db)
+            
             # Check if default user exists
             if User.query.count() == 0:
                 print("Creating default user...")
@@ -68,6 +71,37 @@ def init_database():
             print(f"Error initializing database: {e}", file=sys.stderr)
             # Don't fail - database might initialize on first request
             return 0
+
+
+def _run_migrations(db):
+    """Run simple schema migrations for new columns."""
+    from sqlalchemy import text, inspect
+    
+    migrations = [
+        ('image_vulnerability', 'vulnerabilities_json', 'TEXT'),
+        ('scan_settings', 'log_level', "VARCHAR(20) DEFAULT 'WARNING'"),
+    ]
+    
+    inspector = inspect(db.engine)
+    
+    for table_name, column_name, column_type in migrations:
+        # Check if table exists
+        if table_name not in inspector.get_table_names():
+            continue
+        
+        # Check if column exists
+        existing_columns = [c['name'] for c in inspector.get_columns(table_name)]
+        if column_name in existing_columns:
+            continue
+        
+        # Add the column
+        try:
+            db.session.execute(text(f'ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}'))
+            db.session.commit()
+            print(f"Added column {column_name} to {table_name}")
+        except Exception as e:
+            print(f"Could not add column {column_name} to {table_name}: {e}")
+            db.session.rollback()
 
 if __name__ == '__main__':
     sys.exit(init_database())

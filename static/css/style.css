@@ -2787,12 +2787,291 @@ a:hover {
     color: #EA580C;
 }
 
+.text-medium {
+    color: #CA8A04;
+}
+
 .text-ok {
     color: var(--success-color);
 }
 
+/* Filter Bar */
+.filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    background: var(--card-bg);
+    border-radius: var(--radius-md);
+    margin-bottom: 1rem;
+    box-shadow: var(--shadow-sm);
+}
+
+.filter-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.filter-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.filter-checkbox {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+.filter-checkbox input[type="checkbox"] {
+    display: none;
+}
+
+.filter-tag {
+    padding: 0.35rem 0.65rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: 2px solid transparent;
+    transition: var(--transition);
+    opacity: 0.5;
+}
+
+.filter-checkbox input:checked + .filter-tag {
+    opacity: 1;
+    border-color: currentColor;
+}
+
+.filter-tag.filter-update {
+    background: #DBEAFE;
+    color: #1D4ED8;
+}
+
+.filter-tag.filter-vuln {
+    background: #FEE2E2;
+    color: #DC2626;
+}
+
+.filter-tag.severity-critical {
+    background: #FEE2E2;
+    color: #DC2626;
+}
+
+.filter-tag.severity-high {
+    background: #FFEDD5;
+    color: #EA580C;
+}
+
+.filter-tag.severity-medium {
+    background: #FEF3C7;
+    color: #CA8A04;
+}
+
+.filter-tag.severity-low {
+    background: #DCFCE7;
+    color: #16A34A;
+}
+
+/* Clickable Vulnerability Badge */
+.vuln-badge-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.25rem 0.6rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.7rem;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.vuln-badge-btn:hover {
+    transform: scale(1.05);
+    box-shadow: var(--shadow-md);
+}
+
+.vuln-badge-btn.vuln-critical {
+    background: linear-gradient(135deg, #DC2626, #B91C1C);
+    color: white;
+}
+
+.vuln-badge-btn.vuln-high {
+    background: linear-gradient(135deg, #EA580C, #C2410C);
+    color: white;
+}
+
+.vuln-badge-btn.vuln-medium {
+    background: linear-gradient(135deg, #CA8A04, #A16207);
+    color: white;
+}
+
+.vuln-badge-btn.vuln-low {
+    background: linear-gradient(135deg, #16A34A, #15803D);
+    color: white;
+}
+
+.vuln-badge.vuln-clean {
+    background: linear-gradient(135deg, #D1FAE5, #A7F3D0);
+    color: #065F46;
+}
+
+/* Compact badge for table view */
+.vuln-badge-btn.vuln-badge-compact {
+    font-size: 0.65rem;
+    padding: 0.2rem 0.5rem;
+}
+
+.cell-security {
+    white-space: nowrap;
+}
+
+/* Vulnerability Modal */
+.modal-xl {
+    max-width: 1000px;
+    width: 95%;
+}
+
+.vuln-summary-bar {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    padding: 0.75rem;
+    background: var(--bg-color);
+    border-radius: var(--radius-sm);
+    flex-wrap: wrap;
+}
+
+.vuln-summary-bar .vuln-stat {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: var(--radius-sm);
+    font-weight: 600;
+    font-size: 0.85rem;
+}
+
+.vuln-stat.stat-critical { background: #FEE2E2; color: #DC2626; }
+.vuln-stat.stat-high { background: #FFEDD5; color: #EA580C; }
+.vuln-stat.stat-medium { background: #FEF3C7; color: #CA8A04; }
+.vuln-stat.stat-low { background: #DCFCE7; color: #16A34A; }
+
+.vuln-filters {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.vuln-search {
+    padding: 0.4rem 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    font-size: 0.85rem;
+    flex: 1;
+    min-width: 150px;
+    max-width: 250px;
+}
+
+.vuln-table-container {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+}
+
+.vuln-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.vuln-table thead {
+    position: sticky;
+    top: 0;
+    background: var(--secondary-color);
+    color: white;
+    z-index: 1;
+}
+
+.vuln-table th,
+.vuln-table td {
+    padding: 0.6rem 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.vuln-table tbody tr:hover {
+    background: var(--bg-color);
+}
+
+.vuln-table .severity-cell {
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+}
+
+.vuln-table .severity-CRITICAL { color: #DC2626; }
+.vuln-table .severity-HIGH { color: #EA580C; }
+.vuln-table .severity-MEDIUM { color: #CA8A04; }
+.vuln-table .severity-LOW { color: #16A34A; }
+
+.vuln-table .cve-id {
+    font-family: 'SF Mono', 'Monaco', monospace;
+    font-size: 0.8rem;
+}
+
+.vuln-table .cve-id a {
+    color: var(--primary-color);
+}
+
+.vuln-table .pkg-name {
+    font-weight: 600;
+}
+
+.vuln-table .version-cell {
+    font-family: 'SF Mono', 'Monaco', monospace;
+    font-size: 0.75rem;
+}
+
+.vuln-table .fixed-version {
+    color: var(--success-color);
+}
+
+.vuln-table .no-fix {
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.vuln-table .desc-cell {
+    max-width: 250px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.vuln-empty {
+    padding: 2rem;
+    text-align: center;
+    color: var(--text-muted);
+}
+
 /* Responsive */
 @media (max-width: 768px) {
+    .filter-bar {
+        padding: 0.5rem;
+    }
+    
+    .filter-severity-group {
+        width: 100%;
+    }
+    
     .settings-tabs {
         gap: 0.25rem;
     }

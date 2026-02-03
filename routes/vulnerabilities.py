@@ -67,6 +67,38 @@ def api_vulnerability_report(image_ref):
     return jsonify(result)
 
 
+@vulnerabilities_bp.route('/vulnerabilities/details/<path:image_ref>')
+@login_required
+def api_vulnerability_details(image_ref):
+    """Get full vulnerability details (CVE list) for an image from stored data."""
+    from models import ImageVulnerability
+    
+    try:
+        vuln = ImageVulnerability.query.filter_by(image_ref=image_ref).first()
+        if not vuln:
+            return jsonify({
+                'success': False, 
+                'error': 'No scan data found for this image. Run a security scan first.'
+            }), 404
+        
+        return jsonify({
+            'success': True,
+            'image': vuln.image_ref,
+            'summary': {
+                'critical': vuln.critical_count,
+                'high': vuln.high_count,
+                'medium': vuln.medium_count,
+                'low': vuln.low_count,
+                'total': vuln.total_count
+            },
+            'vulnerabilities': vuln.get_vulnerabilities(),
+            'scanned_at': vuln.scanned_at.isoformat() if vuln.scanned_at else None,
+            'error': vuln.error
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @vulnerabilities_bp.route('/vulnerabilities/cache/clear', methods=['POST'])
 @login_required
 def api_clear_cache():
@@ -131,7 +163,8 @@ def api_update_scan_settings():
         schedule_hour=data.get('schedule_hour'),
         schedule_minute=data.get('schedule_minute'),
         schedule_day=data.get('schedule_day'),
-        severity_filter=data.get('severity_filter')
+        severity_filter=data.get('severity_filter'),
+        log_level=data.get('log_level')
     )
     return jsonify(result)
 

@@ -63,6 +63,27 @@ class ContainerState(db.Model):
     last_checked = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+class ImageUpdate(db.Model):
+    """Store image update check results."""
+    id = db.Column(db.Integer, primary_key=True)
+    image_ref = db.Column(db.String(500), unique=True, nullable=False)
+    has_update = db.Column(db.Boolean, default=False)
+    local_digest = db.Column(db.String(100), nullable=True)
+    remote_digest = db.Column(db.String(100), nullable=True)
+    checked_at = db.Column(db.DateTime, default=datetime.utcnow)
+    error = db.Column(db.Text, nullable=True)
+    
+    def to_dict(self):
+        return {
+            'image': self.image_ref,
+            'has_update': self.has_update,
+            'local_digest': self.local_digest,
+            'remote_digest': self.remote_digest,
+            'checked_at': self.checked_at.isoformat() if self.checked_at else None,
+            'error': self.error
+        }
+
+
 class ImageVulnerability(db.Model):
     """Store vulnerability scan results for container images."""
     id = db.Column(db.Integer, primary_key=True)
@@ -72,6 +93,7 @@ class ImageVulnerability(db.Model):
     medium_count = db.Column(db.Integer, default=0)
     low_count = db.Column(db.Integer, default=0)
     total_count = db.Column(db.Integer, default=0)
+    vulnerabilities_json = db.Column(db.Text, nullable=True)  # Full vulnerability details as JSON
     scanned_at = db.Column(db.DateTime, default=datetime.utcnow)
     scan_duration_seconds = db.Column(db.Float, nullable=True)
     error = db.Column(db.Text, nullable=True)
@@ -87,6 +109,16 @@ class ImageVulnerability(db.Model):
             'scanned_at': self.scanned_at.isoformat() if self.scanned_at else None,
             'error': self.error
         }
+    
+    def get_vulnerabilities(self):
+        """Get full vulnerability list from stored JSON."""
+        if not self.vulnerabilities_json:
+            return []
+        try:
+            import json
+            return json.loads(self.vulnerabilities_json)
+        except Exception:
+            return []
 
 
 class ScanSettings(db.Model):
@@ -98,6 +130,7 @@ class ScanSettings(db.Model):
     schedule_minute = db.Column(db.Integer, default=0)
     schedule_day = db.Column(db.Integer, default=0)  # 0=Monday for weekly
     severity_filter = db.Column(db.String(50), default='CRITICAL,HIGH,MEDIUM,LOW')
+    log_level = db.Column(db.String(10), default='INFO')  # DEBUG, INFO, WARNING, ERROR
     last_scan_started = db.Column(db.DateTime, nullable=True)
     last_scan_completed = db.Column(db.DateTime, nullable=True)
     last_scan_images_count = db.Column(db.Integer, default=0)
@@ -108,6 +141,30 @@ class ScanSettings(db.Model):
         settings = ScanSettings.query.first()
         if not settings:
             settings = ScanSettings()
+            db.session.add(settings)
+            db.session.commit()
+        return settings
+
+
+class UpdateSettings(db.Model):
+    """Update check configuration (singleton)."""
+    id = db.Column(db.Integer, primary_key=True)
+    enabled = db.Column(db.Boolean, default=False)
+    schedule_type = db.Column(db.String(20), default='daily')  # 'manual', 'daily', 'weekly'
+    schedule_hour = db.Column(db.Integer, default=4)  # Hour of day (0-23)
+    schedule_minute = db.Column(db.Integer, default=0)
+    schedule_day = db.Column(db.Integer, default=0)  # 0=Monday for weekly
+    last_check_started = db.Column(db.DateTime, nullable=True)
+    last_check_completed = db.Column(db.DateTime, nullable=True)
+    last_check_images_count = db.Column(db.Integer, default=0)
+    images_with_updates = db.Column(db.Integer, default=0)
+    
+    @staticmethod
+    def get_settings():
+        """Get or create the singleton settings."""
+        settings = UpdateSettings.query.first()
+        if not settings:
+            settings = UpdateSettings()
             db.session.add(settings)
             db.session.commit()
         return settings

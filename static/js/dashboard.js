@@ -721,6 +721,21 @@ async function waitForContainerStatus(id, expectedStatuses, maxMs) {
 
 let imageUpdateCache = {};
 
+// Load stored update status on page load
+async function loadStoredUpdates() {
+    try {
+        const response = await fetch('/api/updates/status');
+        const data = await response.json();
+        
+        if (data.success && data.updates) {
+            imageUpdateCache = data.updates;
+            displayImageUpdates(data.updates);
+        }
+    } catch (error) {
+        console.error('Error loading stored updates:', error);
+    }
+}
+
 async function checkAllImageUpdates() {
     const btn = document.getElementById('checkUpdatesBtn');
     const originalText = btn.innerHTML;
@@ -774,20 +789,37 @@ async function checkAllImageUpdates() {
 
 function displayImageUpdates(results) {
     let updateCount = 0;
+    const containersWithUpdates = new Set();
     
-    // Update all badges in card view
-    document.querySelectorAll('.container-card .update-badge').forEach(badge => {
-        const image = badge.dataset.image;
+    // Update all badges in card view and set data attributes
+    document.querySelectorAll('.container-card').forEach(card => {
+        const image = card.dataset.imageFull;
         const result = results[image];
-        if (result && result.has_update === true) {
-            badge.style.display = 'inline-flex';
-            badge.title = `Update available!\nLocal: ${result.local_digest?.substring(0, 20)}...\nRemote: ${result.remote_digest?.substring(0, 20)}...`;
+        const hasUpdate = result && result.has_update === true;
+        
+        // Set data attribute for filtering
+        card.dataset.hasUpdate = hasUpdate ? 'true' : 'false';
+        
+        if (hasUpdate) {
             updateCount++;
-        } else if (result && result.has_update === false) {
-            badge.style.display = 'none';
-            badge.title = 'Up to date';
-        } else {
-            badge.style.display = 'none';
+            containersWithUpdates.add(card.dataset.id);
+        }
+        
+        // Update badge
+        const badge = card.querySelector('.update-badge');
+        if (badge) {
+            if (hasUpdate) {
+                badge.style.display = 'inline-flex';
+                badge.title = `Update available!\nLocal: ${result.local_digest?.substring(0, 20)}...\nRemote: ${result.remote_digest?.substring(0, 20)}...`;
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+        
+        // Show/hide the Update button
+        const updateBtn = card.querySelector('.update-container-btn');
+        if (updateBtn) {
+            updateBtn.style.display = hasUpdate ? 'inline-flex' : 'none';
         }
     });
     
@@ -816,13 +848,17 @@ function displayImageUpdates(results) {
         }
     });
     
-    // Update table view badges
-    document.querySelectorAll('.container-table .image-value').forEach(span => {
-        const image = span.dataset.image;
+    // Update table view - set data attributes and badges
+    document.querySelectorAll('#tableBody tr').forEach(row => {
+        const image = row.dataset.imageFull;
         const result = results[image];
-        const badge = span.querySelector('.update-badge');
+        const hasUpdate = result && result.has_update === true;
+        
+        row.dataset.hasUpdate = hasUpdate ? 'true' : 'false';
+        
+        const badge = row.querySelector('.update-badge');
         if (badge) {
-            if (result && result.has_update === true) {
+            if (hasUpdate) {
                 badge.style.display = 'inline';
                 badge.title = 'Update available!';
             } else {
@@ -834,13 +870,34 @@ function displayImageUpdates(results) {
     // Update header count
     const countContainer = document.getElementById('updateCount');
     const countValue = document.getElementById('updateCountValue');
-    if (updateCount > 0) {
-        countContainer.style.display = 'inline';
-        countValue.textContent = updateCount;
-        showToast('info', `${updateCount} image update${updateCount > 1 ? 's' : ''} available`);
-    } else {
-        countContainer.style.display = 'none';
-        showToast('success', 'All images are up to date');
+    if (countContainer && countValue) {
+        if (updateCount > 0) {
+            countContainer.style.display = 'inline';
+            countValue.textContent = updateCount;
+        } else {
+            countContainer.style.display = 'none';
+        }
+    }
+    
+    // Show/hide Update All button
+    const updateAllBtn = document.getElementById('updateAllBtn');
+    const updateAllCount = document.getElementById('updateAllCount');
+    if (updateAllBtn && updateAllCount) {
+        if (updateCount > 0) {
+            updateAllBtn.style.display = 'inline-flex';
+            updateAllCount.textContent = updateCount;
+        } else {
+            updateAllBtn.style.display = 'none';
+        }
+    }
+    
+    // Only show toast if this was a fresh check (not loaded from storage)
+    if (Object.keys(results).length > 0 && document.getElementById('checkUpdatesBtn')?.disabled === false) {
+        if (updateCount > 0) {
+            showToast('info', `${updateCount} image update${updateCount > 1 ? 's' : ''} available`);
+        } else {
+            showToast('success', 'All images are up to date');
+        }
     }
 }
 
@@ -1085,3 +1142,333 @@ async function scanAllVulnerabilities() {
         vulnScanInProgress = false;
     }
 }
+
+// =============================================================================
+// Vulnerability Details Modal
+// =============================================================================
+
+let currentVulnData = [];
+
+async function showVulnerabilities(imageRef, containerName) {
+    const modal = document.getElementById('vulnModal');
+    const title = document.getElementById('vulnModalTitle');
+    const summaryBar = document.getElementById('vulnSummaryBar');
+    const tableBody = document.getElementById('vulnTableBody');
+    
+    title.textContent = `🛡️ Security Issues: ${containerName}`;
+    summaryBar.innerHTML = '<div class="loading">Loading vulnerability data...</div>';
+    tableBody.innerHTML = '';
+    modal.style.display = 'flex';
+    
+    try {
+        const response = await fetch(`/api/vulnerabilities/details/${encodeURIComponent(imageRef)}`);
+        const data = await response.json();
+        
+        if (!data.success) {
+            summaryBar.innerHTML = `<div class="error-msg">${data.error || 'Failed to load data'}</div>`;
+            return;
+        }
+        
+        currentVulnData = data.vulnerabilities || [];
+        const summary = data.summary || {};
+        
+        // Render summary bar
+        summaryBar.innerHTML = `
+            <div class="vuln-stat stat-critical">🔴 Critical: ${summary.critical || 0}</div>
+            <div class="vuln-stat stat-high">🟠 High: ${summary.high || 0}</div>
+            <div class="vuln-stat stat-medium">🟡 Medium: ${summary.medium || 0}</div>
+            <div class="vuln-stat stat-low">🟢 Low: ${summary.low || 0}</div>
+            <div style="flex: 1;"></div>
+            <div class="vuln-stat" style="background: #E2E8F0; color: #475569;">
+                📦 Image: ${data.image}
+            </div>
+            <div class="vuln-stat" style="background: #E2E8F0; color: #475569;">
+                🕐 Scanned: ${data.scanned_at ? new Date(data.scanned_at).toLocaleString() : 'N/A'}
+            </div>
+        `;
+        
+        // Render table
+        filterVulnTable();
+        
+    } catch (error) {
+        console.error('Error loading vulnerabilities:', error);
+        summaryBar.innerHTML = '<div class="error-msg">Failed to load vulnerability data</div>';
+    }
+}
+
+function filterVulnTable() {
+    const showCritical = document.getElementById('vulnFilterCritical')?.checked ?? true;
+    const showHigh = document.getElementById('vulnFilterHigh')?.checked ?? true;
+    const showMedium = document.getElementById('vulnFilterMedium')?.checked ?? false;
+    const showLow = document.getElementById('vulnFilterLow')?.checked ?? false;
+    const searchTerm = (document.getElementById('vulnSearch')?.value || '').toLowerCase();
+    
+    const filtered = currentVulnData.filter(vuln => {
+        const severity = (vuln.severity || '').toUpperCase();
+        const matchesSeverity = 
+            (severity === 'CRITICAL' && showCritical) ||
+            (severity === 'HIGH' && showHigh) ||
+            (severity === 'MEDIUM' && showMedium) ||
+            (severity === 'LOW' && showLow);
+        
+        if (!matchesSeverity) return false;
+        
+        if (searchTerm) {
+            const searchable = `${vuln.id} ${vuln.package} ${vuln.title} ${vuln.description}`.toLowerCase();
+            if (!searchable.includes(searchTerm)) return false;
+        }
+        
+        return true;
+    });
+    
+    const tableBody = document.getElementById('vulnTableBody');
+    const emptyMsg = document.getElementById('vulnEmpty');
+    
+    if (filtered.length === 0) {
+        tableBody.innerHTML = '';
+        emptyMsg.style.display = 'block';
+        return;
+    }
+    
+    emptyMsg.style.display = 'none';
+    
+    // Sort by severity
+    const severityOrder = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3, UNKNOWN: 4 };
+    filtered.sort((a, b) => {
+        const aOrder = severityOrder[a.severity?.toUpperCase()] ?? 5;
+        const bOrder = severityOrder[b.severity?.toUpperCase()] ?? 5;
+        return aOrder - bOrder;
+    });
+    
+    tableBody.innerHTML = filtered.map(vuln => {
+        const severity = (vuln.severity || 'UNKNOWN').toUpperCase();
+        const cveLink = vuln.id?.startsWith('CVE-') 
+            ? `<a href="https://nvd.nist.gov/vuln/detail/${vuln.id}" target="_blank" rel="noopener">${vuln.id}</a>`
+            : escapeHtml(vuln.id || 'N/A');
+        const fixedVersion = vuln.fixed_version 
+            ? `<span class="fixed-version">${escapeHtml(vuln.fixed_version)}</span>`
+            : '<span class="no-fix">No fix</span>';
+        
+        return `
+            <tr>
+                <td class="severity-cell severity-${severity}">${severity}</td>
+                <td class="cve-id">${cveLink}</td>
+                <td class="pkg-name">${escapeHtml(vuln.package || 'N/A')}</td>
+                <td class="version-cell">${escapeHtml(vuln.version || 'N/A')}</td>
+                <td class="version-cell">${fixedVersion}</td>
+                <td class="desc-cell" title="${escapeHtml(vuln.title || vuln.description || '')}">${escapeHtml(vuln.title || vuln.description || 'N/A')}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function closeVulnModal(event) {
+    if (event && event.target !== event.currentTarget) return;
+    document.getElementById('vulnModal').style.display = 'none';
+    currentVulnData = [];
+}
+
+// =============================================================================
+// Container Filtering
+// =============================================================================
+
+function applyFilters() {
+    const hasUpdateFilter = document.getElementById('filterHasUpdate')?.checked || false;
+    const hasVulnFilter = document.getElementById('filterHasVuln')?.checked || false;
+    const showCritical = document.getElementById('filterCritical')?.checked ?? true;
+    const showHigh = document.getElementById('filterHigh')?.checked ?? true;
+    const showMedium = document.getElementById('filterMedium')?.checked ?? false;
+    const showLow = document.getElementById('filterLow')?.checked ?? false;
+    
+    // Show/hide severity filters when vuln filter is active
+    const severityFilters = document.getElementById('severityFilters');
+    if (severityFilters) {
+        severityFilters.style.display = hasVulnFilter ? 'flex' : 'none';
+    }
+    
+    // Show/hide clear button
+    const clearBtn = document.getElementById('clearFiltersBtn');
+    if (clearBtn) {
+        clearBtn.style.display = (hasUpdateFilter || hasVulnFilter) ? 'inline-block' : 'none';
+    }
+    
+    const cards = document.querySelectorAll('.container-card');
+    const rows = document.querySelectorAll('#tableBody tr');
+    
+    let visibleCount = 0;
+    
+    cards.forEach(card => {
+        let show = true;
+        
+        // Check update filter
+        if (hasUpdateFilter) {
+            const hasUpdate = card.dataset.hasUpdate === 'true';
+            if (!hasUpdate) show = false;
+        }
+        
+        // Check vulnerability filter
+        if (hasVulnFilter && show) {
+            const critical = parseInt(card.dataset.vulnCritical || 0);
+            const high = parseInt(card.dataset.vulnHigh || 0);
+            const medium = parseInt(card.dataset.vulnMedium || 0);
+            const low = parseInt(card.dataset.vulnLow || 0);
+            
+            const hasMatchingVuln = 
+                (showCritical && critical > 0) ||
+                (showHigh && high > 0) ||
+                (showMedium && medium > 0) ||
+                (showLow && low > 0);
+            
+            if (!hasMatchingVuln) show = false;
+        }
+        
+        card.style.display = show ? '' : 'none';
+        if (show) visibleCount++;
+    });
+    
+    // Apply same logic to table rows
+    rows.forEach(row => {
+        let show = true;
+        
+        if (hasUpdateFilter) {
+            const hasUpdate = row.dataset.hasUpdate === 'true';
+            if (!hasUpdate) show = false;
+        }
+        
+        if (hasVulnFilter && show) {
+            const critical = parseInt(row.dataset.vulnCritical || 0);
+            const high = parseInt(row.dataset.vulnHigh || 0);
+            const medium = parseInt(row.dataset.vulnMedium || 0);
+            const low = parseInt(row.dataset.vulnLow || 0);
+            
+            const hasMatchingVuln = 
+                (showCritical && critical > 0) ||
+                (showHigh && high > 0) ||
+                (showMedium && medium > 0) ||
+                (showLow && low > 0);
+            
+            if (!hasMatchingVuln) show = false;
+        }
+        
+        row.style.display = show ? '' : 'none';
+    });
+    
+    // Update count
+    document.getElementById('totalFiltered').textContent = visibleCount;
+    
+    // Show/hide no results message
+    const noResults = document.getElementById('noResultsState');
+    if (noResults) {
+        noResults.style.display = visibleCount === 0 ? 'block' : 'none';
+    }
+}
+
+function clearFilters() {
+    document.getElementById('filterHasUpdate').checked = false;
+    document.getElementById('filterHasVuln').checked = false;
+    document.getElementById('filterCritical').checked = true;
+    document.getElementById('filterHigh').checked = true;
+    document.getElementById('filterMedium').checked = false;
+    document.getElementById('filterLow').checked = false;
+    applyFilters();
+}
+
+// =============================================================================
+// Container Update Functions
+// =============================================================================
+
+async function updateContainer(containerId, containerName) {
+    if (!confirm(`Update container "${containerName}"?\n\nThis will:\n1. Pull the latest image\n2. Stop the container\n3. Recreate it with the same settings\n4. Start it if it was running`)) {
+        return;
+    }
+    
+    showToast('info', `Updating ${containerName}...`);
+    
+    try {
+        const response = await fetch(`/api/container/${containerId}/recreate`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...csrfHeaders()
+            },
+            body: JSON.stringify({ pull_latest: true })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showToast('success', data.message || `Container ${containerName} updated successfully`);
+            // Refresh the page to show new container
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showToast('error', data.error || 'Failed to update container');
+        }
+    } catch (error) {
+        console.error('Error updating container:', error);
+        showToast('error', 'Failed to update container');
+    }
+}
+
+async function updateAllContainers() {
+    // Count containers with updates
+    const containersWithUpdates = [];
+    document.querySelectorAll('.container-card[data-has-update="true"]').forEach(card => {
+        containersWithUpdates.push({
+            id: card.dataset.id,
+            name: card.querySelector('.container-name')?.textContent || card.dataset.id
+        });
+    });
+    
+    if (containersWithUpdates.length === 0) {
+        showToast('info', 'No containers with updates available');
+        return;
+    }
+    
+    const names = containersWithUpdates.map(c => c.name).join('\n  • ');
+    if (!confirm(`Update ${containersWithUpdates.length} container(s)?\n\n  • ${names}\n\nThis will pull latest images and recreate each container.`)) {
+        return;
+    }
+    
+    const btn = document.getElementById('updateAllBtn');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '⏳ Updating...';
+    btn.disabled = true;
+    
+    try {
+        const response = await fetch('/api/containers/update-all', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...csrfHeaders()
+            },
+            body: JSON.stringify({ 
+                container_ids: containersWithUpdates.map(c => c.id)
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.updated > 0) {
+            showToast('success', `Updated ${data.updated} container(s)`);
+        }
+        if (data.errors > 0) {
+            showToast('warning', `${data.errors} container(s) failed to update`);
+        }
+        
+        // Refresh the page to show updated containers
+        setTimeout(() => location.reload(), 2000);
+        
+    } catch (error) {
+        console.error('Error updating containers:', error);
+        showToast('error', 'Failed to update containers');
+    } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
+}
+
+// Load stored updates on page load
+document.addEventListener('DOMContentLoaded', function() {
+    // Load stored update status
+    loadStoredUpdates();
+});

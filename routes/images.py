@@ -106,7 +106,9 @@ def api_check_image_update():
 @images_bp.route('/images/check-updates', methods=['POST'])
 @login_required
 def api_check_images_updates():
-    """Check multiple images for updates."""
+    """Check multiple images for updates and persist results."""
+    from services.update_service import check_and_save_update
+    
     data = request.get_json() or {}
     images = data.get('images', [])
     
@@ -117,6 +119,61 @@ def api_check_images_updates():
         return jsonify({'success': False, 'error': 'Maximum 50 images per request'}), 400
     
     unique_images = list(set(images))
-    results = {img: check_image_update(img) for img in unique_images}
+    results = {img: check_and_save_update(img) for img in unique_images}
     
     return jsonify({'success': True, 'results': results})
+
+
+@images_bp.route('/updates/status')
+@login_required
+def api_get_stored_updates():
+    """Get all stored update check results."""
+    from services.update_service import get_stored_updates, get_update_settings
+    
+    updates = get_stored_updates()
+    settings = get_update_settings()
+    
+    return jsonify({
+        'success': True,
+        'updates': updates,
+        'settings': settings
+    })
+
+
+@images_bp.route('/updates/check-all', methods=['POST'])
+@login_required
+def api_check_all_updates():
+    """Check all container images for updates."""
+    from services.update_service import check_all_container_images
+    
+    result = check_all_container_images()
+    return jsonify(result)
+
+
+@images_bp.route('/updates/settings', methods=['GET', 'POST'])
+@login_required
+def api_update_settings():
+    """Get or update the update check settings."""
+    from services.update_service import get_update_settings, update_update_settings
+    
+    if request.method == 'GET':
+        settings = get_update_settings()
+        return jsonify({'success': True, 'settings': settings})
+    
+    data = request.get_json() or {}
+    result = update_update_settings(data)
+    return jsonify(result)
+
+
+@images_bp.route('/updates/clear', methods=['POST'])
+@login_required
+def api_clear_updates():
+    """Clear stored update statuses."""
+    from services.update_service import clear_update_status
+    
+    data = request.get_json() or {}
+    image_ref = data.get('image')
+    
+    clear_update_status(image_ref)
+    return jsonify({'success': True, 'message': 'Update status cleared'})
+

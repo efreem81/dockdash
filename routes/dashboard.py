@@ -32,14 +32,26 @@ def dashboard():
     from services.vulnerability_service import get_stored_vulnerabilities
     vuln_results = get_stored_vulnerabilities()
     
+    # Get update check results
+    from services.update_service import get_stored_updates
+    update_results = get_stored_updates()
+    
     # Group containers by compose project
     compose_groups = {}
     standalone = []
+    updates_count = 0
     for c in containers:
         # Attach vulnerability data to each container
         image = c.get('image', '')
         if image in vuln_results:
             c['vulnerabilities'] = vuln_results[image]
+        
+        # Attach update data to each container
+        if image in update_results:
+            has_update = update_results[image].get('has_update', False)
+            c['has_update'] = has_update
+            if has_update:
+                updates_count += 1
         
         project = c.get('compose_project')
         if project:
@@ -56,7 +68,9 @@ def dashboard():
                          host_ip=host_ip, 
                          show_all=show_all,
                          docker_available=docker_available,
-                         vuln_results=vuln_results)
+                         vuln_results=vuln_results,
+                         update_results=update_results,
+                         updates_count=updates_count)
 
 
 @dashboard_bp.route('/health')
