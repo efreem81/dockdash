@@ -202,6 +202,7 @@ def api_update_all_containers():
     results = []
     success_count = 0
     error_count = 0
+    updated_images = []  # Track images that were updated for batch scanning
     
     for container in containers:
         container_id = container.get('id')
@@ -217,12 +218,14 @@ def api_update_all_containers():
         if not update_info.get('has_update'):
             continue
         
-        # Try to recreate
+        # Try to recreate (skip_scan=True to avoid Trivy cache lock conflicts)
         try:
-            result = recreate_container(container_id, pull_latest=True)
+            result = recreate_container(container_id, pull_latest=True, skip_scan=True)
             if result.get('success'):
                 success_count += 1
                 clear_update_status(image)
+                if image not in updated_images:
+                    updated_images.append(image)
                 results.append({
                     'container': container_name,
                     'image': image,
@@ -245,6 +248,24 @@ def api_update_all_containers():
                 'success': False,
                 'error': str(e)
             })
+    
+    # Run vulnerability scans sequentially for updated images (avoids Trivy lock conflicts)
+    if updated_images:
+        import threading
+        def scan_updated_images():
+            from services.vulnerability_service import scan_image, save_scan_result, clear_image_cache
+            import time
+            for image_ref in updated_images:
+                try:
+                    clear_image_cache(image_ref)
+                    start_time = time.time()
+                    scan_result = scan_image(image_ref, 'CRITICAL,HIGH,MEDIUM,LOW')
+                    duration = time.time() - start_time
+                    save_scan_result(image_ref, scan_result, duration)
+                except Exception as e:
+                    print(f"Warning: Could not scan image {image_ref}: {e}")
+        # Run scans in background thread so response isn't delayed
+        threading.Thread(target=scan_updated_images, daemon=True).start()
     
     return jsonify({
         'success': error_count == 0,

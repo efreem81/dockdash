@@ -44,6 +44,34 @@
         </div>
     </div>
 
+    <!-- Bulk Actions Toolbar -->
+    <div class="bulk-actions-bar" id="bulkActionsBar" style="display: none;">
+        <div class="bulk-select-info">
+            <label class="bulk-select-all">
+                <input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()">
+                <span class="bulk-select-label">Select All</span>
+            </label>
+            <span class="bulk-selected-count"><span id="selectedCount">0</span> selected</span>
+        </div>
+        <div class="bulk-actions">
+            <button class="btn btn-success btn-sm" onclick="bulkStartContainers()" title="Start selected containers">
+                ▶️ Start
+            </button>
+            <button class="btn btn-danger btn-sm" onclick="bulkStopContainers()" title="Stop selected containers">
+                ⏹️ Stop
+            </button>
+            <button class="btn btn-warning btn-sm" onclick="bulkRestartContainers()" title="Restart selected containers">
+                🔄 Restart
+            </button>
+            <button class="btn btn-info btn-sm" onclick="bulkRecreateContainers()" title="Recreate selected containers">
+                🔃 Recreate
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="clearSelection()" title="Clear selection">
+                ✕ Clear
+            </button>
+        </div>
+    </div>
+
     {% if not docker_available %}
     <div class="alert alert-warning">
         <strong>⚠️ Docker Not Available</strong>
@@ -54,19 +82,22 @@
     <div class="info-bar">
         <span class="host-ip">🌐 Host IP: <strong>{{ host_ip }}</strong></span>
         <span class="container-count">📦 Containers: <strong id="containerCount">{{ containers|length }}</strong></span>
-        <span class="update-count" id="updateCount" style="display: none;">⬆️ Updates: <strong id="updateCountValue">0</strong></span>
-        <span class="vuln-summary" id="vulnSummary">
+        <a href="#" class="info-stat info-stat-clickable" id="updateCountLink" onclick="toggleUpdateFilter(); return false;" style="display: {{ 'inline-flex' if updates_count > 0 else 'none' }};" title="Click to filter containers with updates">
+            ⬆️ Updates: <strong id="updateCountValue">{{ updates_count }}</strong>
+        </a>
+        {% set vuln_container_count = containers|selectattr('vulnerabilities')|selectattr('vulnerabilities.total', 'gt', 0)|list|length %}
+        <a href="#" class="info-stat info-stat-clickable" id="vulnCountLink" onclick="toggleVulnFilter(); return false;" style="display: {{ 'inline-flex' if vuln_container_count > 0 else 'none' }};" title="Click to filter containers with vulnerabilities">
             {% set total_critical = vuln_results.values()|selectattr('critical')|map(attribute='critical')|sum %}
             {% set total_high = vuln_results.values()|selectattr('high')|map(attribute='high')|sum %}
             {% set total_medium = vuln_results.values()|selectattr('medium')|map(attribute='medium')|sum %}
             {% set total_low = vuln_results.values()|selectattr('low')|map(attribute='low')|sum %}
-            {% if total_critical > 0 or total_high > 0 or total_medium > 0 or total_low > 0 %}
             🛡️ Security: <strong class="{% if total_critical > 0 %}text-critical{% elif total_high > 0 %}text-high{% else %}text-medium{% endif %}">{{ total_critical }}C / {{ total_high }}H / {{ total_medium }}M / {{ total_low }}L</strong>
-            {% elif vuln_results|length > 0 %}
+        </a>
+        <span class="vuln-summary" id="vulnSummaryClean" style="display: {{ 'inline' if vuln_results|length > 0 and vuln_container_count == 0 else 'none' }};">
             🛡️ <strong class="text-ok">All clear!</strong>
-            {% else %}
+        </span>
+        <span class="vuln-summary" id="vulnSummaryNotScanned" style="display: {{ 'inline' if vuln_results|length == 0 else 'none' }};">
             🛡️ <span class="text-muted">Not scanned</span>
-            {% endif %}
         </span>
     </div>
 
@@ -76,11 +107,12 @@
             <span class="filter-label">Filter:</span>
             <label class="filter-checkbox">
                 <input type="checkbox" id="filterHasUpdate" onchange="applyFilters()">
-                <span class="filter-tag filter-update">⬆️ Has Update</span>
+                <span class="filter-tag filter-update">⬆️ Has Update (<span id="filterUpdateCount">{{ updates_count }}</span>)</span>
             </label>
             <label class="filter-checkbox">
                 <input type="checkbox" id="filterHasVuln" onchange="applyFilters()">
-                <span class="filter-tag filter-vuln">🛡️ Has Issues</span>
+                {% set vuln_container_count = containers|selectattr('vulnerabilities')|selectattr('vulnerabilities.total', 'gt', 0)|list|length %}
+                <span class="filter-tag filter-vuln">🛡️ Has Issues (<span id="filterVulnCount">{{ vuln_container_count }}</span>)</span>
             </label>
         </div>
         <div class="filter-group filter-severity-group" id="severityFilters" style="display: none;">
@@ -152,161 +184,210 @@
     </div>
 
     <!-- Card View -->
-    <div class="container-grid" id="containerGrid">
-        {% if containers %}
-            {% for container in containers %}
-            <div class="container-card status-{{ container.status }}" 
-                 data-name="{{ container.name|lower }}"
-                 data-status="{{ container.status }}"
-                 data-image="{{ container.image|lower }}"
-                 data-image-full="{{ container.image }}"
-                 data-created="{{ container.created }}"
-                 data-compose-project="{{ container.compose_project or '' }}"
-                 data-id="{{ container.id }}"
-                 data-has-update="{{ 'true' if container.has_update else 'false' }}"
-                 data-vuln-critical="{{ container.vulnerabilities.critical if container.vulnerabilities else 0 }}"
-                 data-vuln-high="{{ container.vulnerabilities.high if container.vulnerabilities else 0 }}"
-                 data-vuln-medium="{{ container.vulnerabilities.medium if container.vulnerabilities else 0 }}"
-                 data-vuln-low="{{ container.vulnerabilities.low if container.vulnerabilities else 0 }}"
-                 data-vuln-total="{{ container.vulnerabilities.total if container.vulnerabilities else 0 }}">
-                <div class="container-header">
-                    <h3 class="container-name">{{ container.name }}</h3>
-                    <div class="header-badges">
-                        {% if container.vulnerabilities and container.vulnerabilities.total > 0 %}
-                        <button class="vuln-badge-btn {% if container.vulnerabilities.critical > 0 %}vuln-critical{% elif container.vulnerabilities.high > 0 %}vuln-high{% elif container.vulnerabilities.medium > 0 %}vuln-medium{% else %}vuln-low{% endif %}" 
-                              onclick="showVulnerabilities('{{ container.image }}', '{{ container.name }}')"
-                              title="Click for vulnerability details">
-                            🛡️ {{ container.vulnerabilities.critical }}C/{{ container.vulnerabilities.high }}H/{{ container.vulnerabilities.medium }}M/{{ container.vulnerabilities.low }}L
-                        </button>
-                        {% elif container.vulnerabilities %}
-                        <span class="vuln-badge vuln-clean" title="No vulnerabilities found">🛡️ ✓</span>
-                        {% endif %}
-                        {% if container.health_status %}
-                        <span class="health-badge health-{{ container.health_status }}" title="Health: {{ container.health_status }}">
-                            {% if container.health_status == 'healthy' %}💚{% elif container.health_status == 'unhealthy' %}❤️{% else %}💛{% endif %}
-                        </span>
-                        {% endif %}
-                        <span class="update-badge" data-image="{{ container.image }}" style="display: {{ 'inline-flex' if container.has_update else 'none' }};" title="Update available">
-                            ⬆️ Update
-                        </span>
-                        <span class="status-badge status-{{ container.status }}">{{ container.status }}</span>
-                    </div>
-                </div>
-                
-                <div class="container-details">
-                    <div class="detail-row">
-                        <span class="detail-label">Image:</span>
-                        <span class="detail-value image-value" data-image="{{ container.image }}">
-                            {{ container.image }}{% if container.image_digest %}<span class="image-digest" title="Image digest: sha256:{{ container.image_digest }}...">@{{ container.image_digest }}</span>{% endif %}
-                            <span class="image-update-icon" style="display: none;" title="Checking for updates...">🔄</span>
-                        </span>
-                    </div>
-                    {% if container.image_age %}
-                    <div class="detail-row">
-                        <span class="detail-label">Image Age:</span>
-                        <span class="detail-value image-age" title="Image created: {{ container.image_created }}">📦 {{ container.image_age }}</span>
-                    </div>
+    <div class="container-grid-wrapper" id="containerGrid">
+        {% macro container_card(container) %}
+        <div class="container-card status-{{ container.status }}" 
+             data-name="{{ container.name|lower }}"
+             data-status="{{ container.status }}"
+             data-image="{{ container.image|lower }}"
+             data-image-full="{{ container.image }}"
+             data-created="{{ container.created }}"
+             data-compose-project="{{ container.compose_project or '' }}"
+             data-id="{{ container.id }}"
+             data-has-update="{{ 'true' if container.has_update else 'false' }}"
+             data-vuln-critical="{{ container.vulnerabilities.critical if container.vulnerabilities else 0 }}"
+             data-vuln-high="{{ container.vulnerabilities.high if container.vulnerabilities else 0 }}"
+             data-vuln-medium="{{ container.vulnerabilities.medium if container.vulnerabilities else 0 }}"
+             data-vuln-low="{{ container.vulnerabilities.low if container.vulnerabilities else 0 }}"
+             data-vuln-total="{{ container.vulnerabilities.total if container.vulnerabilities else 0 }}">
+            <label class="container-select-checkbox" onclick="event.stopPropagation()">
+                <input type="checkbox" class="container-checkbox" data-id="{{ container.id }}" data-name="{{ container.name }}" data-status="{{ container.status }}" onchange="updateBulkSelection()">
+            </label>
+            <div class="container-header">
+                <h3 class="container-name">{{ container.name }}</h3>
+                <div class="header-badges">
+                    {% if container.vulnerabilities and container.vulnerabilities.total > 0 %}
+                    <button class="vuln-badge-btn {% if container.vulnerabilities.critical > 0 %}vuln-critical{% elif container.vulnerabilities.high > 0 %}vuln-high{% elif container.vulnerabilities.medium > 0 %}vuln-medium{% else %}vuln-low{% endif %}" 
+                          onclick="showVulnerabilities('{{ container.image }}', '{{ container.name }}')"
+                          title="Click for vulnerability details">
+                        🛡️ {{ container.vulnerabilities.critical }}C/{{ container.vulnerabilities.high }}H/{{ container.vulnerabilities.medium }}M/{{ container.vulnerabilities.low }}L
+                    </button>
+                    {% elif container.vulnerabilities %}
+                    <span class="vuln-badge vuln-clean" title="No vulnerabilities found">🛡️ ✓</span>
                     {% endif %}
-                    {% if container.compose_project %}
-                    <div class="detail-row">
-                        <span class="detail-label">Project:</span>
-                        <span class="detail-value compose-project">📦 {{ container.compose_project }}</span>
-                    </div>
+                    {% if container.health_status %}
+                    <span class="health-badge health-{{ container.health_status }}" title="Health: {{ container.health_status }}">
+                        {% if container.health_status == 'healthy' %}💚{% elif container.health_status == 'unhealthy' %}❤️{% else %}💛{% endif %}
+                    </span>
                     {% endif %}
-                    {% if container.uptime_human %}
-                    <div class="detail-row">
-                        <span class="detail-label">Uptime:</span>
-                        <span class="detail-value">⏱️ {{ container.uptime_human }}</span>
-                    </div>
-                    {% endif %}
-                    {% if container.restart_count > 0 %}
-                    <div class="detail-row">
-                        <span class="detail-label">Restarts:</span>
-                        <span class="detail-value restart-count">🔁 {{ container.restart_count }}</span>
-                    </div>
-                    {% endif %}
-                    <div class="detail-row">
-                        <span class="detail-label">Created:</span>
-                        <span class="detail-value">{{ container.created }}</span>
-                    </div>
+                    <span class="update-badge" data-image="{{ container.image }}" style="display: {{ 'inline-flex' if container.has_update else 'none' }};" title="Update available">
+                        ⬆️ Update
+                    </span>
+                    <span class="status-badge status-{{ container.status }}">{{ container.status }}</span>
                 </div>
-
-                <!-- Stats placeholder -->
-                <div class="container-stats" id="stats-{{ container.id }}" style="display: none;">
-                    <div class="stats-row">
-                        <span class="stat-label">CPU:</span>
-                        <span class="stat-value cpu-stat">-</span>
-                        <div class="stat-bar"><div class="stat-fill cpu-fill"></div></div>
-                    </div>
-                    <div class="stats-row">
-                        <span class="stat-label">Memory:</span>
-                        <span class="stat-value mem-stat">-</span>
-                        <div class="stat-bar"><div class="stat-fill mem-fill"></div></div>
-                    </div>
+            </div>
+            
+            <div class="container-details">
+                <div class="detail-row">
+                    <span class="detail-label">Image:</span>
+                    <span class="detail-value image-value" data-image="{{ container.image }}">
+                        {{ container.image }}{% if container.image_digest %}<span class="image-digest" title="Image digest: sha256:{{ container.image_digest }}...">@{{ container.image_digest }}</span>{% endif %}
+                        <span class="image-update-icon" style="display: none;" title="Checking for updates...">🔄</span>
+                    </span>
                 </div>
-
-                {% if container.ports %}
-                <div class="container-ports">
-                    <h4>🔗 Links</h4>
-                    {% for port in container.ports %}
-                    <div class="port-item">
-                        <a href="{{ port.url }}"
-                           target="_blank"
-                           rel="noopener noreferrer"
-                           class="port-link probe-link"
-                           data-host="{{ host_ip }}"
-                           data-port="{{ port.host_port }}"
-                           data-container-port="{{ port.container_port }}"
-                           title="Open in new tab">
-                            <span class="link-scheme">http</span>
-                            <span class="link-port">:{{ port.host_port }}</span>
-                        </a>
-                    </div>
-                    {% endfor %}
-                </div>
-                {% else %}
-                <div class="container-ports no-ports">
-                    <p>No exposed ports</p>
+                {% if container.image_age %}
+                <div class="detail-row">
+                    <span class="detail-label">Image Age:</span>
+                    <span class="detail-value image-age" title="Image created: {{ container.image_created }}">📦 {{ container.image_age }}</span>
                 </div>
                 {% endif %}
+                {% if container.uptime_human %}
+                <div class="detail-row">
+                    <span class="detail-label">Uptime:</span>
+                    <span class="detail-value">⏱️ {{ container.uptime_human }}</span>
+                </div>
+                {% endif %}
+                {% if container.restart_count > 0 %}
+                <div class="detail-row">
+                    <span class="detail-label">Restarts:</span>
+                    <span class="detail-value restart-count">🔁 {{ container.restart_count }}</span>
+                </div>
+                {% endif %}
+                <div class="detail-row">
+                    <span class="detail-label">Created:</span>
+                    <span class="detail-value">{{ container.created }}</span>
+                </div>
+            </div>
 
-                <div class="container-actions">
-                    {% if container.status == 'running' %}
-                    <button class="btn btn-warning btn-sm" onclick="restartContainer('{{ container.id }}', '{{ container.name }}')" title="Restart">
-                        🔄
-                    </button>
-                    <button class="btn btn-danger btn-sm" onclick="stopContainer('{{ container.id }}', '{{ container.name }}')" title="Stop">
-                        ⏹️
-                    </button>
-                    <button class="btn btn-info btn-sm" onclick="toggleStats('{{ container.id }}')" title="Stats">
-                        📊
-                    </button>
-                    <button class="btn btn-secondary btn-sm" onclick="openExec('{{ container.id }}', '{{ container.name }}')" title="Execute Command">
-                        💻
-                    </button>
-                    {% else %}
-                    <button class="btn btn-success btn-sm" onclick="startContainer('{{ container.id }}', '{{ container.name }}')" title="Start">
-                        ▶️
-                    </button>
-                    <button class="btn btn-danger btn-sm" onclick="removeContainer('{{ container.id }}', '{{ container.name }}')" title="Remove">
-                        🗑️
-                    </button>
-                    {% endif %}
-                    <button class="btn btn-secondary btn-sm" onclick="openLogs('{{ container.id }}', '{{ container.name }}')" title="Logs">
-                        📜
-                    </button>
-                    <button class="btn btn-secondary btn-sm" onclick="openInspect('{{ container.id }}', '{{ container.name }}')" title="Inspect">
-                        🔍
-                    </button>
-                    <button class="btn btn-info btn-sm" onclick="recreateContainer('{{ container.id }}', '{{ container.name }}')" title="Recreate (pull latest & restart)">
-                        🔃
-                    </button>
-                    <button class="btn btn-success btn-sm update-container-btn" onclick="updateContainer('{{ container.id }}', '{{ container.name }}')" title="Update to latest image" style="display: {{ 'inline-flex' if container.has_update else 'none' }};">
-                        ⬆️ Update
-                    </button>
+            <!-- Stats placeholder -->
+            <div class="container-stats" id="stats-{{ container.id }}" style="display: none;">
+                <div class="stats-row">
+                    <span class="stat-label">CPU:</span>
+                    <span class="stat-value cpu-stat">-</span>
+                    <div class="stat-bar"><div class="stat-fill cpu-fill"></div></div>
+                </div>
+                <div class="stats-row">
+                    <span class="stat-label">Memory:</span>
+                    <span class="stat-value mem-stat">-</span>
+                    <div class="stat-bar"><div class="stat-fill mem-fill"></div></div>
+                </div>
+            </div>
+
+            {% if container.ports %}
+            <div class="container-ports">
+                <h4>🔗 Links</h4>
+                {% for port in container.ports %}
+                <div class="port-item">
+                    <a href="{{ port.url }}"
+                       target="_blank"
+                       rel="noopener noreferrer"
+                       class="port-link probe-link"
+                       data-host="{{ host_ip }}"
+                       data-port="{{ port.host_port }}"
+                       data-container-port="{{ port.container_port }}"
+                       title="Open in new tab">
+                        <span class="link-scheme">http</span>
+                        <span class="link-port">:{{ port.host_port }}</span>
+                    </a>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="container-ports no-ports">
+                <p>No exposed ports</p>
+            </div>
+            {% endif %}
+
+            <div class="container-actions">
+                {% if container.status == 'running' %}
+                <button class="btn btn-warning btn-sm" onclick="restartContainer('{{ container.id }}', '{{ container.name }}')" title="Restart">
+                    🔄
+                </button>
+                <button class="btn btn-danger btn-sm" onclick="stopContainer('{{ container.id }}', '{{ container.name }}')" title="Stop">
+                    ⏹️
+                </button>
+                <button class="btn btn-info btn-sm" onclick="toggleStats('{{ container.id }}')" title="Stats">
+                    📊
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="openExec('{{ container.id }}', '{{ container.name }}')" title="Execute Command">
+                    💻
+                </button>
+                {% else %}
+                <button class="btn btn-success btn-sm" onclick="startContainer('{{ container.id }}', '{{ container.name }}')" title="Start">
+                    ▶️
+                </button>
+                <button class="btn btn-danger btn-sm" onclick="removeContainer('{{ container.id }}', '{{ container.name }}')" title="Remove">
+                    🗑️
+                </button>
+                {% endif %}
+                <button class="btn btn-secondary btn-sm" onclick="openLogs('{{ container.id }}', '{{ container.name }}')" title="Logs">
+                    📜
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="openInspect('{{ container.id }}', '{{ container.name }}')" title="Inspect">
+                    🔍
+                </button>
+                <button class="btn btn-info btn-sm" onclick="recreateContainer('{{ container.id }}', '{{ container.name }}')" title="Recreate (pull latest & restart)">
+                    🔃
+                </button>
+                <button class="btn btn-success btn-sm update-container-btn" onclick="updateContainer('{{ container.id }}', '{{ container.name }}')" title="Update to latest image" style="display: {{ 'inline-flex' if container.has_update else 'none' }};">
+                    ⬆️ Update
+                </button>
+            </div>
+        </div>
+        {% endmacro %}
+
+        {% if containers %}
+            <!-- Compose Project Groups -->
+            {% for project, project_containers in compose_groups.items() %}
+            <div class="compose-group" data-project="{{ project }}">
+                <div class="compose-group-header" onclick="toggleComposeGroup('{{ project }}')">
+                    <div class="compose-group-info">
+                        <span class="compose-group-toggle">▼</span>
+                        <span class="compose-group-icon">📦</span>
+                        <h3 class="compose-group-name">{{ project }}</h3>
+                        <span class="compose-group-count">{{ project_containers|length }} container{{ 's' if project_containers|length != 1 else '' }}</span>
+                        {% set running_count = project_containers|selectattr('status', 'equalto', 'running')|list|length %}
+                        <span class="compose-group-status {% if running_count == project_containers|length %}status-all-running{% elif running_count > 0 %}status-partial{% else %}status-all-stopped{% endif %}">
+                            {{ running_count }}/{{ project_containers|length }} running
+                        </span>
+                    </div>
+                    <div class="compose-group-actions" onclick="event.stopPropagation()">
+                        <button class="btn btn-success btn-xs" onclick="startComposeProject('{{ project }}')" title="Start all containers in project">
+                            ▶️ Start All
+                        </button>
+                        <button class="btn btn-danger btn-xs" onclick="stopComposeProject('{{ project }}')" title="Stop all containers in project">
+                            ⏹️ Stop All
+                        </button>
+                        <button class="btn btn-warning btn-xs" onclick="restartComposeProject('{{ project }}')" title="Restart all containers in project">
+                            🔄 Restart All
+                        </button>
+                    </div>
+                </div>
+                <div class="compose-group-containers container-grid" id="compose-group-{{ project|replace(' ', '-') }}">
+                    {% for container in project_containers %}
+                        {{ container_card(container) }}
+                    {% endfor %}
                 </div>
             </div>
             {% endfor %}
+
+            <!-- Standalone Containers -->
+            {% if standalone_containers %}
+            <div class="standalone-group">
+                {% if compose_groups %}
+                <div class="standalone-header">
+                    <span class="standalone-icon">🐳</span>
+                    <h3 class="standalone-title">Standalone Containers</h3>
+                    <span class="standalone-count">{{ standalone_containers|length }} container{{ 's' if standalone_containers|length != 1 else '' }}</span>
+                </div>
+                {% endif %}
+                <div class="container-grid">
+                    {% for container in standalone_containers %}
+                        {{ container_card(container) }}
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
         {% endif %}
         <div class="empty-state" id="emptyState" style="display: none;">
             <span class="empty-icon">📦</span>
@@ -326,6 +407,9 @@
         <table class="container-table">
             <thead>
                 <tr>
+                    <th class="checkbox-col">
+                        <input type="checkbox" id="tableSelectAll" onchange="toggleSelectAll()">
+                    </th>
                     <th class="sortable" data-sort="name" onclick="sortByColumn('name')">
                         Container <span class="sort-icon" id="sort-name">↕</span>
                     </th>
@@ -355,6 +439,9 @@
                     data-vuln-medium="{{ container.vulnerabilities.medium if container.vulnerabilities else 0 }}"
                     data-vuln-low="{{ container.vulnerabilities.low if container.vulnerabilities else 0 }}"
                     data-vuln-total="{{ container.vulnerabilities.total if container.vulnerabilities else 0 }}">
+                    <td class="checkbox-col">
+                        <input type="checkbox" class="container-checkbox" data-id="{{ container.id }}" data-name="{{ container.name }}" data-status="{{ container.status }}" onchange="updateBulkSelection()">
+                    </td>
                     <td class="cell-name">
                         <strong>{{ container.name }}</strong>
                     </td>
@@ -389,13 +476,31 @@
                         <button class="btn btn-danger btn-xs" onclick="stopContainer('{{ container.id }}', '{{ container.name }}')" title="Stop">
                             ⏹️
                         </button>
+                        <button class="btn btn-info btn-xs" onclick="toggleStats('{{ container.id }}')" title="Stats">
+                            📊
+                        </button>
+                        <button class="btn btn-secondary btn-xs" onclick="openExec('{{ container.id }}', '{{ container.name }}')" title="Execute Command">
+                            💻
+                        </button>
                         {% else %}
                         <button class="btn btn-success btn-xs" onclick="startContainer('{{ container.id }}', '{{ container.name }}')" title="Start">
                             ▶️
                         </button>
+                        <button class="btn btn-danger btn-xs" onclick="removeContainer('{{ container.id }}', '{{ container.name }}')" title="Remove">
+                            🗑️
+                        </button>
                         {% endif %}
                         <button class="btn btn-secondary btn-xs" onclick="openLogs('{{ container.id }}', '{{ container.name }}')" title="Logs">
                             📜
+                        </button>
+                        <button class="btn btn-secondary btn-xs" onclick="openInspect('{{ container.id }}', '{{ container.name }}')" title="Inspect">
+                            🔍
+                        </button>
+                        <button class="btn btn-info btn-xs" onclick="recreateContainer('{{ container.id }}', '{{ container.name }}')" title="Recreate">
+                            🔃
+                        </button>
+                        <button class="btn btn-success btn-xs update-container-btn" onclick="updateContainer('{{ container.id }}', '{{ container.name }}')" title="Update" style="display: {{ 'inline-flex' if container.has_update else 'none' }};">
+                            ⬆️
                         </button>
                     </td>
                     <td class="cell-links">

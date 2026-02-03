@@ -5,13 +5,14 @@ Handles container recreation with preserved configuration
 from services.docker_service import get_docker_client
 
 
-def recreate_container(container_id, pull_latest=True):
+def recreate_container(container_id, pull_latest=True, skip_scan=False):
     """
     Recreate a container with the same configuration but optionally updated image.
     
     Args:
         container_id: ID or name of the container to recreate
         pull_latest: Whether to pull the latest image before recreating
+        skip_scan: Whether to skip vulnerability scanning (useful for batch updates)
     
     Returns:
         Dictionary with success status and new container info
@@ -66,20 +67,20 @@ def recreate_container(container_id, pull_latest=True):
         if was_running:
             new_container.start()
         
-        # Always scan the image after recreation to get fresh results
-        # Clear cache first to ensure we scan the actual new image
+        # Scan the image after recreation unless skip_scan=True (batch updates)
         scan_result = None
-        try:
-            from services.vulnerability_service import scan_image, save_scan_result, clear_image_cache
-            import time
-            # Clear cache to force fresh scan of the (potentially new) image
-            clear_image_cache(image_ref)
-            start_time = time.time()
-            scan_result = scan_image(image_ref, 'CRITICAL,HIGH,MEDIUM,LOW')
-            duration = time.time() - start_time
-            save_scan_result(image_ref, scan_result, duration)
-        except Exception as e:
-            print(f"Warning: Could not scan image: {e}")
+        if not skip_scan:
+            try:
+                from services.vulnerability_service import scan_image, save_scan_result, clear_image_cache
+                import time
+                # Clear cache to force fresh scan of the (potentially new) image
+                clear_image_cache(image_ref)
+                start_time = time.time()
+                scan_result = scan_image(image_ref, 'CRITICAL,HIGH,MEDIUM,LOW')
+                duration = time.time() - start_time
+                save_scan_result(image_ref, scan_result, duration)
+            except Exception as e:
+                print(f"Warning: Could not scan image: {e}")
         
         return {
             'success': True,

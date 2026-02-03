@@ -1373,6 +1373,356 @@ function clearFilters() {
     applyFilters();
 }
 
+// Toggle functions for clickable info bar stats
+function toggleUpdateFilter() {
+    const checkbox = document.getElementById('filterHasUpdate');
+    if (checkbox) {
+        checkbox.checked = !checkbox.checked;
+        applyFilters();
+    }
+}
+
+function toggleVulnFilter() {
+    const checkbox = document.getElementById('filterHasVuln');
+    if (checkbox) {
+        checkbox.checked = !checkbox.checked;
+        applyFilters();
+    }
+}
+
+// =============================================================================
+// Compose Project Grouping
+// =============================================================================
+
+function toggleComposeGroup(project) {
+    const group = document.querySelector(`.compose-group[data-project="${project}"]`);
+    if (group) {
+        group.classList.toggle('collapsed');
+        // Save state to localStorage
+        const collapsed = JSON.parse(localStorage.getItem('dockdash-collapsed-groups') || '{}');
+        collapsed[project] = group.classList.contains('collapsed');
+        localStorage.setItem('dockdash-collapsed-groups', JSON.stringify(collapsed));
+    }
+}
+
+function restoreCollapsedGroups() {
+    const collapsed = JSON.parse(localStorage.getItem('dockdash-collapsed-groups') || '{}');
+    for (const [project, isCollapsed] of Object.entries(collapsed)) {
+        if (isCollapsed) {
+            const group = document.querySelector(`.compose-group[data-project="${project}"]`);
+            if (group) group.classList.add('collapsed');
+        }
+    }
+}
+
+async function startComposeProject(project) {
+    const containers = getContainersByProject(project);
+    const stoppedContainers = containers.filter(c => c.status !== 'running');
+    
+    if (stoppedContainers.length === 0) {
+        showToast('info', `All containers in ${project} are already running`);
+        return;
+    }
+    
+    if (!confirm(`Start ${stoppedContainers.length} stopped container(s) in "${project}"?`)) return;
+    
+    showToast('info', `Starting ${stoppedContainers.length} container(s)...`);
+    
+    let success = 0;
+    let failed = 0;
+    
+    for (const c of stoppedContainers) {
+        try {
+            const response = await fetch(`/api/container/${c.id}/start`, { 
+                method: 'POST', 
+                headers: csrfHeaders() 
+            });
+            const data = await response.json();
+            if (data.success) success++;
+            else failed++;
+        } catch (e) {
+            failed++;
+        }
+    }
+    
+    if (success > 0) showToast('success', `Started ${success} container(s)`);
+    if (failed > 0) showToast('error', `Failed to start ${failed} container(s)`);
+    
+    setTimeout(() => location.reload(), 1000);
+}
+
+async function stopComposeProject(project) {
+    const containers = getContainersByProject(project);
+    const runningContainers = containers.filter(c => c.status === 'running');
+    
+    if (runningContainers.length === 0) {
+        showToast('info', `All containers in ${project} are already stopped`);
+        return;
+    }
+    
+    if (!confirm(`Stop ${runningContainers.length} running container(s) in "${project}"?`)) return;
+    
+    showToast('info', `Stopping ${runningContainers.length} container(s)...`);
+    
+    let success = 0;
+    let failed = 0;
+    
+    for (const c of runningContainers) {
+        try {
+            const response = await fetch(`/api/container/${c.id}/stop`, { 
+                method: 'POST', 
+                headers: csrfHeaders() 
+            });
+            const data = await response.json();
+            if (data.success) success++;
+            else failed++;
+        } catch (e) {
+            failed++;
+        }
+    }
+    
+    if (success > 0) showToast('success', `Stopped ${success} container(s)`);
+    if (failed > 0) showToast('error', `Failed to stop ${failed} container(s)`);
+    
+    setTimeout(() => location.reload(), 1000);
+}
+
+async function restartComposeProject(project) {
+    const containers = getContainersByProject(project);
+    const runningContainers = containers.filter(c => c.status === 'running');
+    
+    if (runningContainers.length === 0) {
+        showToast('info', `No running containers in ${project} to restart`);
+        return;
+    }
+    
+    if (!confirm(`Restart ${runningContainers.length} container(s) in "${project}"?`)) return;
+    
+    showToast('info', `Restarting ${runningContainers.length} container(s)...`);
+    
+    let success = 0;
+    let failed = 0;
+    
+    for (const c of runningContainers) {
+        try {
+            const response = await fetch(`/api/container/${c.id}/restart`, { 
+                method: 'POST', 
+                headers: csrfHeaders() 
+            });
+            const data = await response.json();
+            if (data.success) success++;
+            else failed++;
+        } catch (e) {
+            failed++;
+        }
+    }
+    
+    if (success > 0) showToast('success', `Restarted ${success} container(s)`);
+    if (failed > 0) showToast('error', `Failed to restart ${failed} container(s)`);
+    
+    setTimeout(() => location.reload(), 1000);
+}
+
+function getContainersByProject(project) {
+    const cards = document.querySelectorAll(`.compose-group[data-project="${project}"] .container-card`);
+    return Array.from(cards).map(card => ({
+        id: card.dataset.id,
+        name: card.dataset.name,
+        status: card.dataset.status
+    }));
+}
+
+// =============================================================================
+// Bulk Selection
+// =============================================================================
+
+function updateBulkSelection() {
+    const checkboxes = document.querySelectorAll('.container-checkbox:checked');
+    const count = checkboxes.length;
+    const bulkBar = document.getElementById('bulkActionsBar');
+    const countSpan = document.getElementById('selectedCount');
+    
+    if (count > 0) {
+        bulkBar.style.display = 'flex';
+        countSpan.textContent = count;
+    } else {
+        bulkBar.style.display = 'none';
+    }
+    
+    // Update card visual selection
+    document.querySelectorAll('.container-card').forEach(card => {
+        const checkbox = card.querySelector('.container-checkbox');
+        if (checkbox) {
+            card.classList.toggle('selected', checkbox.checked);
+        }
+    });
+    
+    // Sync "select all" checkboxes
+    const allCheckboxes = document.querySelectorAll('.container-checkbox');
+    const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+    const tableSelectAll = document.getElementById('tableSelectAll');
+    const allChecked = allCheckboxes.length > 0 && checkboxes.length === allCheckboxes.length;
+    
+    if (selectAllCheckbox) selectAllCheckbox.checked = allChecked;
+    if (tableSelectAll) tableSelectAll.checked = allChecked;
+}
+
+function toggleSelectAll() {
+    const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+    const tableSelectAll = document.getElementById('tableSelectAll');
+    const isChecked = selectAllCheckbox?.checked || tableSelectAll?.checked || false;
+    
+    // Sync both select all checkboxes
+    if (selectAllCheckbox) selectAllCheckbox.checked = isChecked;
+    if (tableSelectAll) tableSelectAll.checked = isChecked;
+    
+    // Toggle all individual checkboxes
+    document.querySelectorAll('.container-checkbox').forEach(cb => {
+        cb.checked = isChecked;
+    });
+    
+    updateBulkSelection();
+}
+
+function clearSelection() {
+    document.querySelectorAll('.container-checkbox').forEach(cb => {
+        cb.checked = false;
+    });
+    updateBulkSelection();
+}
+
+function getSelectedContainers() {
+    const selected = [];
+    document.querySelectorAll('.container-checkbox:checked').forEach(cb => {
+        selected.push({
+            id: cb.dataset.id,
+            name: cb.dataset.name,
+            status: cb.dataset.status
+        });
+    });
+    return selected;
+}
+
+async function bulkStartContainers() {
+    const containers = getSelectedContainers().filter(c => c.status !== 'running');
+    
+    if (containers.length === 0) {
+        showToast('info', 'No stopped containers selected');
+        return;
+    }
+    
+    const names = containers.map(c => c.name).join(', ');
+    if (!confirm(`Start ${containers.length} container(s)?\n\n${names}`)) return;
+    
+    showToast('info', `Starting ${containers.length} container(s)...`);
+    
+    let success = 0, failed = 0;
+    for (const c of containers) {
+        try {
+            const response = await fetch(`/api/container/${c.id}/start`, { method: 'POST', headers: csrfHeaders() });
+            const data = await response.json();
+            if (data.success) success++;
+            else failed++;
+        } catch (e) { failed++; }
+    }
+    
+    if (success > 0) showToast('success', `Started ${success} container(s)`);
+    if (failed > 0) showToast('error', `Failed to start ${failed} container(s)`);
+    
+    setTimeout(() => location.reload(), 1000);
+}
+
+async function bulkStopContainers() {
+    const containers = getSelectedContainers().filter(c => c.status === 'running');
+    
+    if (containers.length === 0) {
+        showToast('info', 'No running containers selected');
+        return;
+    }
+    
+    const names = containers.map(c => c.name).join(', ');
+    if (!confirm(`Stop ${containers.length} container(s)?\n\n${names}`)) return;
+    
+    showToast('info', `Stopping ${containers.length} container(s)...`);
+    
+    let success = 0, failed = 0;
+    for (const c of containers) {
+        try {
+            const response = await fetch(`/api/container/${c.id}/stop`, { method: 'POST', headers: csrfHeaders() });
+            const data = await response.json();
+            if (data.success) success++;
+            else failed++;
+        } catch (e) { failed++; }
+    }
+    
+    if (success > 0) showToast('success', `Stopped ${success} container(s)`);
+    if (failed > 0) showToast('error', `Failed to stop ${failed} container(s)`);
+    
+    setTimeout(() => location.reload(), 1000);
+}
+
+async function bulkRestartContainers() {
+    const containers = getSelectedContainers().filter(c => c.status === 'running');
+    
+    if (containers.length === 0) {
+        showToast('info', 'No running containers selected');
+        return;
+    }
+    
+    const names = containers.map(c => c.name).join(', ');
+    if (!confirm(`Restart ${containers.length} container(s)?\n\n${names}`)) return;
+    
+    showToast('info', `Restarting ${containers.length} container(s)...`);
+    
+    let success = 0, failed = 0;
+    for (const c of containers) {
+        try {
+            const response = await fetch(`/api/container/${c.id}/restart`, { method: 'POST', headers: csrfHeaders() });
+            const data = await response.json();
+            if (data.success) success++;
+            else failed++;
+        } catch (e) { failed++; }
+    }
+    
+    if (success > 0) showToast('success', `Restarted ${success} container(s)`);
+    if (failed > 0) showToast('error', `Failed to restart ${failed} container(s)`);
+    
+    setTimeout(() => location.reload(), 1000);
+}
+
+async function bulkRecreateContainers() {
+    const containers = getSelectedContainers();
+    
+    if (containers.length === 0) {
+        showToast('info', 'No containers selected');
+        return;
+    }
+    
+    const names = containers.map(c => c.name).join(', ');
+    if (!confirm(`Recreate ${containers.length} container(s)?\n\nThis will pull the latest images and restart:\n${names}`)) return;
+    
+    showToast('info', `Recreating ${containers.length} container(s)...`);
+    
+    let success = 0, failed = 0;
+    for (const c of containers) {
+        try {
+            const response = await fetch(`/api/container/${c.id}/recreate`, { 
+                method: 'POST', 
+                headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
+                body: JSON.stringify({ pull_latest: true })
+            });
+            const data = await response.json();
+            if (data.success) success++;
+            else failed++;
+        } catch (e) { failed++; }
+    }
+    
+    if (success > 0) showToast('success', `Recreated ${success} container(s)`);
+    if (failed > 0) showToast('error', `Failed to recreate ${failed} container(s)`);
+    
+    setTimeout(() => location.reload(), 1500);
+}
+
 // =============================================================================
 // Container Update Functions
 // =============================================================================
@@ -1471,4 +1821,7 @@ async function updateAllContainers() {
 document.addEventListener('DOMContentLoaded', function() {
     // Load stored update status
     loadStoredUpdates();
+    
+    // Restore collapsed compose groups
+    restoreCollapsedGroups();
 });
