@@ -661,7 +661,7 @@ async function removeContainer(id, name) {
 }
 
 async function recreateContainer(id, name) {
-    if (!confirm(`Recreate container ${name}? This will:\n• Pull the latest image\n• Stop and remove the current container\n• Create a new container with the same config\n\nContinue?`)) return;
+    if (!confirm(`Recreate container ${name}? This will:\n• Pull the latest image\n• Stop and remove the current container\n• Create a new container with the same config\n• Rescan for vulnerabilities\n\nContinue?`)) return;
     
     showToast('info', `Recreating ${name}...`);
     
@@ -677,6 +677,11 @@ async function recreateContainer(id, name) {
             let msg = data.message;
             if (data.pulled_new_image) {
                 msg += ' (new image pulled)';
+                // Show vulnerability scan results if available
+                if (data.vulnerability_scan) {
+                    const scan = data.vulnerability_scan;
+                    msg += ` — CVEs: ${scan.critical || 0}C/${scan.high || 0}H/${scan.medium || 0}M/${scan.low || 0}L`;
+                }
             }
             showToast('success', msg);
             setTimeout(() => location.reload(), 1500);
@@ -1031,4 +1036,51 @@ function showInspectTab(tab) {
             break;
     }
     content.innerHTML = html || '<p>No data</p>';
+}
+
+// =============================================================================
+// Vulnerability Scanning
+// =============================================================================
+
+let vulnScanInProgress = false;
+
+async function scanAllVulnerabilities() {
+    if (vulnScanInProgress) {
+        showToast('info', 'Scan already in progress...');
+        return;
+    }
+    
+    const btn = document.getElementById('scanVulnBtn');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '⏳ Scanning...';
+    btn.disabled = true;
+    vulnScanInProgress = true;
+    
+    showToast('info', 'Starting vulnerability scan for all container images...');
+    
+    try {
+        const response = await fetch('/api/vulnerabilities/scan-all', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...csrfHeaders() }
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            const summary = data.total_summary || {};
+            showToast('success', `Scan complete! ${data.images_scanned} images scanned. ` +
+                `${summary.critical || 0} Critical, ${summary.high || 0} High vulnerabilities found.`);
+            
+            // Reload to show updated vulnerability badges
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showToast('error', data.error || 'Scan failed');
+        }
+    } catch (error) {
+        console.error('Error scanning vulnerabilities:', error);
+        showToast('error', 'Failed to scan vulnerabilities');
+    } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+        vulnScanInProgress = false;
+    }
 }

@@ -66,13 +66,29 @@ def recreate_container(container_id, pull_latest=True):
         if was_running:
             new_container.start()
         
+        # Always scan the image after recreation to get fresh results
+        # Clear cache first to ensure we scan the actual new image
+        scan_result = None
+        try:
+            from services.vulnerability_service import scan_image, save_scan_result, clear_image_cache
+            import time
+            # Clear cache to force fresh scan of the (potentially new) image
+            clear_image_cache(image_ref)
+            start_time = time.time()
+            scan_result = scan_image(image_ref, 'CRITICAL,HIGH,MEDIUM,LOW')
+            duration = time.time() - start_time
+            save_scan_result(image_ref, scan_result, duration)
+        except Exception as e:
+            print(f"Warning: Could not scan image: {e}")
+        
         return {
             'success': True,
             'message': f'Container {old_name} recreated successfully',
             'container_id': new_container.short_id,
             'image': image_ref,
             'pulled_new_image': pulled_new,
-            'started': was_running
+            'started': was_running,
+            'vulnerability_scan': scan_result.get('summary') if scan_result and scan_result.get('success') else None
         }
         
     except Exception as e:

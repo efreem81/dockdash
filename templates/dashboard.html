@@ -32,6 +32,9 @@
             <button class="btn btn-secondary" onclick="checkAllImageUpdates()" id="checkUpdatesBtn" title="Check for image updates">
                 ⬆️ Check Updates
             </button>
+            <button class="btn btn-secondary" onclick="scanAllVulnerabilities()" id="scanVulnBtn" title="Scan all images for vulnerabilities">
+                🛡️ Scan CVEs
+            </button>
             <button class="btn btn-secondary" onclick="refreshContainers()">
                 🔄 Refresh
             </button>
@@ -49,6 +52,17 @@
         <span class="host-ip">🌐 Host IP: <strong>{{ host_ip }}</strong></span>
         <span class="container-count">📦 Containers: <strong id="containerCount">{{ containers|length }}</strong></span>
         <span class="update-count" id="updateCount" style="display: none;">⬆️ Updates: <strong id="updateCountValue">0</strong></span>
+        <span class="vuln-summary" id="vulnSummary">
+            {% set total_critical = vuln_results.values()|selectattr('critical')|map(attribute='critical')|sum %}
+            {% set total_high = vuln_results.values()|selectattr('high')|map(attribute='high')|sum %}
+            {% if total_critical > 0 or total_high > 0 %}
+            🛡️ CVEs: <strong class="{% if total_critical > 0 %}text-critical{% else %}text-high{% endif %}">{{ total_critical }}C / {{ total_high }}H</strong>
+            {% elif vuln_results|length > 0 %}
+            🛡️ <strong class="text-ok">No critical/high CVEs</strong>
+            {% else %}
+            🛡️ <span class="text-muted">Not scanned</span>
+            {% endif %}
+        </span>
     </div>
 
     <!-- Search and Controls Bar -->
@@ -112,6 +126,12 @@
                 <div class="container-header">
                     <h3 class="container-name">{{ container.name }}</h3>
                     <div class="header-badges">
+                        {% if container.vulnerabilities %}
+                        <span class="vuln-badge {% if container.vulnerabilities.critical > 0 %}vuln-critical{% elif container.vulnerabilities.high > 0 %}vuln-high{% elif container.vulnerabilities.medium > 0 %}vuln-medium{% else %}vuln-low{% endif %}" 
+                              title="Vulnerabilities: {{ container.vulnerabilities.critical }} Critical, {{ container.vulnerabilities.high }} High, {{ container.vulnerabilities.medium }} Medium, {{ container.vulnerabilities.low }} Low">
+                            🛡️ {% if container.vulnerabilities.critical > 0 %}{{ container.vulnerabilities.critical }}C{% endif %}{% if container.vulnerabilities.high > 0 %} {{ container.vulnerabilities.high }}H{% endif %}{% if container.vulnerabilities.critical == 0 and container.vulnerabilities.high == 0 and container.vulnerabilities.total > 0 %}{{ container.vulnerabilities.total }}{% endif %}{% if container.vulnerabilities.total == 0 %}✓{% endif %}
+                        </span>
+                        {% endif %}
                         {% if container.health_status %}
                         <span class="health-badge health-{{ container.health_status }}" title="Health: {{ container.health_status }}">
                             {% if container.health_status == 'healthy' %}💚{% elif container.health_status == 'unhealthy' %}❤️{% else %}💛{% endif %}
@@ -126,16 +146,18 @@
                 
                 <div class="container-details">
                     <div class="detail-row">
-                        <span class="detail-label">ID:</span>
-                        <span class="detail-value">{{ container.id }}</span>
-                    </div>
-                    <div class="detail-row">
                         <span class="detail-label">Image:</span>
                         <span class="detail-value image-value" data-image="{{ container.image }}">
-                            {{ container.image }}
+                            {{ container.image }}{% if container.image_digest %}<span class="image-digest" title="Image digest: sha256:{{ container.image_digest }}...">@{{ container.image_digest }}</span>{% endif %}
                             <span class="image-update-icon" style="display: none;" title="Checking for updates...">🔄</span>
                         </span>
                     </div>
+                    {% if container.image_age %}
+                    <div class="detail-row">
+                        <span class="detail-label">Image Age:</span>
+                        <span class="detail-value image-age" title="Image created: {{ container.image_created }}">📦 {{ container.image_age }}</span>
+                    </div>
+                    {% endif %}
                     {% if container.compose_project %}
                     <div class="detail-row">
                         <span class="detail-label">Project:</span>
@@ -275,15 +297,16 @@
                     data-created="{{ container.created }}"
                     data-id="{{ container.id }}">
                     <td class="cell-name">
-                        <strong>{{ container.name }}</strong><span class="cell-id">({{ container.id }})</span>
+                        <strong>{{ container.name }}</strong>
                     </td>
                     <td>
                         <span class="status-badge status-{{ container.status }}">{{ container.status }}</span>
                     </td>
                     <td class="cell-image">
                         <span class="image-value" data-image="{{ container.image }}">
-                            {{ container.image }}
+                            {{ container.image }}{% if container.image_digest %}<span class="image-digest" title="sha256:{{ container.image_digest }}...">@{{ container.image_digest }}</span>{% endif %}
                             <span class="update-badge table-update-badge" style="display: none;" title="Update available">⬆️</span>
+                            {% if container.image_age %}<span class="image-age-badge" title="Image created: {{ container.image_created }}">{{ container.image_age }}</span>{% endif %}
                         </span>
                     </td>
                     <td class="cell-actions">

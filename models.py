@@ -63,6 +63,56 @@ class ContainerState(db.Model):
     last_checked = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+class ImageVulnerability(db.Model):
+    """Store vulnerability scan results for container images."""
+    id = db.Column(db.Integer, primary_key=True)
+    image_ref = db.Column(db.String(500), unique=True, nullable=False)
+    critical_count = db.Column(db.Integer, default=0)
+    high_count = db.Column(db.Integer, default=0)
+    medium_count = db.Column(db.Integer, default=0)
+    low_count = db.Column(db.Integer, default=0)
+    total_count = db.Column(db.Integer, default=0)
+    scanned_at = db.Column(db.DateTime, default=datetime.utcnow)
+    scan_duration_seconds = db.Column(db.Float, nullable=True)
+    error = db.Column(db.Text, nullable=True)
+    
+    def to_dict(self):
+        return {
+            'image': self.image_ref,
+            'critical': self.critical_count,
+            'high': self.high_count,
+            'medium': self.medium_count,
+            'low': self.low_count,
+            'total': self.total_count,
+            'scanned_at': self.scanned_at.isoformat() if self.scanned_at else None,
+            'error': self.error
+        }
+
+
+class ScanSettings(db.Model):
+    """Vulnerability scanning configuration (singleton)."""
+    id = db.Column(db.Integer, primary_key=True)
+    enabled = db.Column(db.Boolean, default=False)
+    schedule_type = db.Column(db.String(20), default='daily')  # 'manual', 'daily', 'weekly'
+    schedule_hour = db.Column(db.Integer, default=3)  # Hour of day (0-23)
+    schedule_minute = db.Column(db.Integer, default=0)
+    schedule_day = db.Column(db.Integer, default=0)  # 0=Monday for weekly
+    severity_filter = db.Column(db.String(50), default='CRITICAL,HIGH,MEDIUM,LOW')
+    last_scan_started = db.Column(db.DateTime, nullable=True)
+    last_scan_completed = db.Column(db.DateTime, nullable=True)
+    last_scan_images_count = db.Column(db.Integer, default=0)
+    
+    @staticmethod
+    def get_settings():
+        """Get or create the singleton settings."""
+        settings = ScanSettings.query.first()
+        if not settings:
+            settings = ScanSettings()
+            db.session.add(settings)
+            db.session.commit()
+        return settings
+
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))

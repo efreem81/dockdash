@@ -35,6 +35,27 @@ function escapeHtml(str) {
 }
 
 // =============================================================================
+// Tab Navigation
+// =============================================================================
+
+function showSettingsTab(tabName) {
+    // Update tab buttons
+    document.querySelectorAll('.settings-tabs .tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    event.target.classList.add('active');
+    
+    // Update tab content
+    document.querySelectorAll('.settings-tab-content').forEach(content => {
+        content.style.display = 'none';
+    });
+    document.getElementById(`tab-${tabName}`).style.display = 'block';
+    
+    // Store preference
+    localStorage.setItem('dockdash-settings-tab', tabName);
+}
+
+// =============================================================================
 // Webhook Functions
 // =============================================================================
 
@@ -46,20 +67,34 @@ async function loadWebhooks() {
         const container = document.getElementById('webhooksList');
         if (data.webhooks && data.webhooks.length > 0) {
             container.innerHTML = data.webhooks.map(w => `
-                <div class="webhook-item">
+                <div class="webhook-item ${w.enabled ? '' : 'disabled'}">
                     <div class="webhook-info">
-                        <strong>${escapeHtml(w.name)}</strong>
-                        <span class="webhook-type">${w.webhook_type}</span>
-                        <span class="webhook-status ${w.enabled ? 'enabled' : 'disabled'}">${w.enabled ? '✅' : '❌'}</span>
+                        <div class="webhook-header">
+                            <strong>${escapeHtml(w.name)}</strong>
+                            <span class="webhook-type-badge">${w.webhook_type}</span>
+                        </div>
+                        <div class="webhook-alerts">
+                            ${w.alert_container_stop ? '<span class="alert-tag">⏹️ Stop</span>' : ''}
+                            ${w.alert_container_start ? '<span class="alert-tag">▶️ Start</span>' : ''}
+                            ${w.alert_health_unhealthy ? '<span class="alert-tag">❤️ Health</span>' : ''}
+                            <span class="alert-tag">📊 CPU ${w.alert_cpu_threshold}%</span>
+                            <span class="alert-tag">📊 Mem ${w.alert_memory_threshold}%</span>
+                        </div>
                     </div>
                     <div class="webhook-actions">
-                        <button class="btn btn-secondary btn-xs" onclick="editWebhook(${w.id})">✏️</button>
-                        <button class="btn btn-danger btn-xs" onclick="deleteWebhook(${w.id})">🗑️</button>
+                        <button class="btn btn-secondary btn-sm" onclick="editWebhook(${w.id})" title="Edit">✏️</button>
+                        <button class="btn btn-secondary btn-sm" onclick="testWebhookById(${w.id})" title="Test">🧪</button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteWebhook(${w.id})" title="Delete">🗑️</button>
                     </div>
                 </div>
             `).join('');
         } else {
-            container.innerHTML = '<p class="empty-text">No webhooks configured</p>';
+            container.innerHTML = `
+                <div class="empty-state-small">
+                    <p>No webhooks configured yet.</p>
+                    <p class="text-muted">Add a webhook to receive alerts for container events.</p>
+                </div>
+            `;
         }
     } catch (error) {
         document.getElementById('webhooksList').innerHTML = '<p class="error">Failed to load webhooks</p>';
@@ -126,6 +161,11 @@ async function saveWebhook() {
         enabled: true
     };
     
+    if (!data.name || !data.webhook_url) {
+        showToast('error', 'Name and URL are required');
+        return;
+    }
+    
     try {
         const url = id ? `/api/webhook/${id}` : '/api/webhook';
         const method = id ? 'PUT' : 'POST';
@@ -157,11 +197,33 @@ async function testWebhook() {
         return;
     }
     
+    showToast('info', 'Sending test notification...');
+    
     try {
         const response = await fetch('/api/webhook/test', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
             body: JSON.stringify({ webhook_type: webhookType, webhook_url: webhookUrl })
+        });
+        const result = await response.json();
+        
+        if (result.success) {
+            showToast('success', 'Test notification sent!');
+        } else {
+            showToast('error', result.error || 'Test failed');
+        }
+    } catch (error) {
+        showToast('error', 'Failed to send test');
+    }
+}
+
+async function testWebhookById(id) {
+    showToast('info', 'Sending test notification...');
+    
+    try {
+        const response = await fetch(`/api/webhook/${id}/test`, {
+            method: 'POST',
+            headers: csrfHeaders()
         });
         const result = await response.json();
         
@@ -197,6 +259,246 @@ async function deleteWebhook(id) {
 }
 
 // =============================================================================
+// Vulnerability Scanning Functions
+// =============================================================================
+
+async function loadScannerStatus() {
+    try {
+        const response = await fetch('/api/vulnerabilities/status');
+        const data = await response.json();
+        
+        const indicator = document.getElementById('scannerIndicator');
+        const statusText = document.getElementById('scannerStatusText');
+        const lastScanInfo = document.getElementById('lastScanInfo');
+        const scanBtn = document.getElementById('fullScanBtn');
+        
+        if (data.available) {
+            indicator.textContent = '✅';
+            statusText.textContent = 'Trivy scanner is available';
+            if (scanBtn) scanBtn.disabled = false;
+        } else {
+            indicator.textContent = '❌';
+            statusText.innerHTML = 'Trivy not installed. <a href="https://trivy.dev" target="_blank">Install Trivy</a>';
+            if (scanBtn) scanBtn.disabled = true;
+        }
+        
+        // Load scan settings and show last scan info
+        if (data.settings) {
+            loadScanSettings(data.settings);
+            if (data.settings.last_scan_completed) {
+                const lastScan = new Date(data.settings.last_scan_completed);
+                const imagesCount = data.settings.last_scan_images_count || 0;
+                lastScanInfo.textContent = `Last scan: ${lastScan.toLocaleString()} (${imagesCount} images)`;
+            } else {
+                lastScanInfo.textContent = 'No scans completed yet';
+            }
+        } else {
+            lastScanInfo.textContent = '';
+        }
+    } catch (error) {
+        const statusText = document.getElementById('scannerStatusText');
+        if (statusText) {
+            statusText.textContent = '❌ Failed to check scanner status';
+        }
+    }
+}
+
+function loadScanSettings(settings) {
+    const scanEnabled = document.getElementById('scanEnabled');
+    const scheduleType = document.getElementById('scheduleType');
+    const scheduleHour = document.getElementById('scheduleHour');
+    const scheduleMinute = document.getElementById('scheduleMinute');
+    const scheduleDay = document.getElementById('scheduleDay');
+    const severityFilter = document.getElementById('severityFilter');
+    
+    if (scanEnabled) scanEnabled.checked = settings.enabled || false;
+    if (scheduleType) scheduleType.value = settings.schedule_type || 'daily';
+    if (scheduleHour) scheduleHour.value = settings.schedule_hour ?? 3;
+    if (scheduleMinute) scheduleMinute.value = settings.schedule_minute ?? 0;
+    if (scheduleDay) scheduleDay.value = settings.schedule_day ?? 0;
+    if (severityFilter) severityFilter.value = settings.severity_filter || 'CRITICAL,HIGH,MEDIUM,LOW';
+    
+    updateScheduleUI();
+}
+
+function updateScheduleUI() {
+    const scheduleType = document.getElementById('scheduleType');
+    const dayGroup = document.getElementById('dayGroup');
+    if (scheduleType && dayGroup) {
+        dayGroup.style.display = scheduleType.value === 'weekly' ? 'block' : 'none';
+    }
+}
+
+async function saveScanSettings() {
+    const data = {
+        enabled: document.getElementById('scanEnabled')?.checked || false,
+        schedule_type: document.getElementById('scheduleType')?.value || 'daily',
+        schedule_hour: parseInt(document.getElementById('scheduleHour')?.value || 3),
+        schedule_minute: parseInt(document.getElementById('scheduleMinute')?.value || 0),
+        schedule_day: parseInt(document.getElementById('scheduleDay')?.value || 0),
+        severity_filter: document.getElementById('severityFilter')?.value || 'CRITICAL,HIGH,MEDIUM,LOW'
+    };
+    
+    try {
+        const response = await fetch('/api/vulnerabilities/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
+            body: JSON.stringify(data)
+        });
+        const result = await response.json();
+        
+        if (result.success) {
+            showToast('success', 'Scan schedule saved');
+        } else {
+            showToast('error', result.error || 'Failed to save settings');
+        }
+    } catch (error) {
+        showToast('error', 'Failed to save settings');
+    }
+}
+
+async function runFullScan() {
+    const btn = document.getElementById('fullScanBtn');
+    const progressDiv = document.getElementById('scanProgress');
+    const progressFill = document.getElementById('scanProgressFill');
+    const progressText = document.getElementById('scanProgressText');
+    
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '⏳ Starting...';
+    }
+    if (progressDiv) progressDiv.style.display = 'block';
+    if (progressFill) progressFill.style.width = '0%';
+    if (progressText) progressText.textContent = 'Starting scan...';
+    
+    try {
+        const response = await fetch('/api/vulnerabilities/scan-all', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...csrfHeaders() }
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            const summary = data.total_summary || {};
+            if (progressText) {
+                progressText.textContent = 
+                    `Complete! ${data.images_scanned || 0} images scanned. ` +
+                    `${summary.critical || 0}C / ${summary.high || 0}H / ${summary.medium || 0}M / ${summary.low || 0}L`;
+            }
+            if (progressFill) progressFill.style.width = '100%';
+            
+            showToast('success', `Scan complete! Found ${summary.critical || 0} Critical, ${summary.high || 0} High vulnerabilities.`);
+            
+            // Refresh status after a delay
+            setTimeout(() => loadScannerStatus(), 1000);
+        } else {
+            showToast('error', data.error || 'Scan failed');
+            if (progressDiv) progressDiv.style.display = 'none';
+        }
+    } catch (error) {
+        showToast('error', 'Failed to start scan');
+        if (progressDiv) progressDiv.style.display = 'none';
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = '▶️ Scan Now';
+        }
+    }
+}
+
+// =============================================================================
+// Monitoring Functions
+// =============================================================================
+
+async function loadMonitoringStatus() {
+    try {
+        const response = await fetch('/api/monitoring/status');
+        const data = await response.json();
+        
+        const isRunning = data.running;
+        const indicator = document.getElementById('monitoringIndicator');
+        const statusText = document.getElementById('monitoringStatusText');
+        const startBtn = document.getElementById('startMonitoringBtn');
+        const stopBtn = document.getElementById('stopMonitoringBtn');
+        const cpuThreshold = document.getElementById('cpuThreshold');
+        const memoryThreshold = document.getElementById('memoryThreshold');
+        
+        if (indicator) indicator.textContent = isRunning ? '✅' : '⏸️';
+        if (statusText) statusText.textContent = isRunning ? 'Monitoring active' : 'Monitoring stopped';
+        if (startBtn) startBtn.style.display = isRunning ? 'none' : 'inline-block';
+        if (stopBtn) stopBtn.style.display = isRunning ? 'inline-block' : 'none';
+        if (cpuThreshold) cpuThreshold.value = data.cpu_threshold || 80;
+        if (memoryThreshold) memoryThreshold.value = data.memory_threshold || 85;
+    } catch (error) {
+        const statusText = document.getElementById('monitoringStatusText');
+        if (statusText) statusText.textContent = 'Failed to load status';
+    }
+}
+
+async function startMonitoring() {
+    try {
+        const response = await fetch('/api/monitoring/start', {
+            method: 'POST',
+            headers: csrfHeaders()
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            showToast('success', 'Monitoring started');
+            loadMonitoringStatus();
+        } else {
+            showToast('error', data.error || 'Failed to start monitoring');
+        }
+    } catch (error) {
+        showToast('error', 'Failed to start monitoring');
+    }
+}
+
+async function stopMonitoring() {
+    try {
+        const response = await fetch('/api/monitoring/stop', {
+            method: 'POST',
+            headers: csrfHeaders()
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            showToast('success', 'Monitoring stopped');
+            loadMonitoringStatus();
+        } else {
+            showToast('error', data.error || 'Failed to stop monitoring');
+        }
+    } catch (error) {
+        showToast('error', 'Failed to stop monitoring');
+    }
+}
+
+async function updateThresholds() {
+    const cpuThreshold = document.getElementById('cpuThreshold');
+    const memoryThreshold = document.getElementById('memoryThreshold');
+    
+    const cpu = parseInt(cpuThreshold?.value || 80);
+    const memory = parseInt(memoryThreshold?.value || 85);
+    
+    try {
+        const response = await fetch('/api/monitoring/thresholds', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
+            body: JSON.stringify({ cpu_threshold: cpu, memory_threshold: memory })
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            showToast('success', 'Thresholds updated');
+        } else {
+            showToast('error', data.error || 'Failed to update thresholds');
+        }
+    } catch (error) {
+        showToast('error', 'Failed to update thresholds');
+    }
+}
+
+// =============================================================================
 // Cleanup Functions
 // =============================================================================
 
@@ -221,6 +523,8 @@ async function pruneAll() {
 }
 
 async function doPrune(url, type) {
+    showToast('info', `Pruning ${type}...`);
+    
     try {
         const response = await fetch(url, {
             method: 'POST',
@@ -232,7 +536,7 @@ async function doPrune(url, type) {
             const space = result.space_reclaimed_human || result.total_space_reclaimed_human || '0 B';
             showToast('success', `Cleaned ${type}. Reclaimed: ${space}`);
         } else {
-            showToast('error', result.error);
+            showToast('error', result.error || `Failed to prune ${type}`);
         }
     } catch (error) {
         showToast('error', `Failed to prune ${type}`);
@@ -272,6 +576,8 @@ async function showImagesModal() {
                 </table>
             `;
             document.getElementById('imagesContent').innerHTML = html;
+        } else {
+            document.getElementById('imagesContent').innerHTML = '<p>No images found</p>';
         }
     } catch (error) {
         document.getElementById('imagesContent').innerHTML = '<p class="error">Failed to load images</p>';
@@ -297,182 +603,10 @@ async function deleteImage(imageId) {
             showToast('success', 'Image deleted');
             showImagesModal();
         } else {
-            showToast('error', result.error);
+            showToast('error', result.error || 'Failed to delete image');
         }
     } catch (error) {
         showToast('error', 'Failed to delete image');
-    }
-}
-
-// =============================================================================
-// Monitoring Functions
-// =============================================================================
-
-async function loadMonitoringStatus() {
-    try {
-        const response = await fetch('/api/monitoring/status');
-        const data = await response.json();
-        
-        const isRunning = data.running;
-        document.getElementById('monitoringIndicator').textContent = isRunning ? '✅' : '⏸️';
-        document.getElementById('monitoringText').textContent = isRunning ? 'Monitoring active' : 'Monitoring stopped';
-        document.getElementById('startMonitoringBtn').style.display = isRunning ? 'none' : 'inline-block';
-        document.getElementById('stopMonitoringBtn').style.display = isRunning ? 'inline-block' : 'none';
-        document.getElementById('cpuThreshold').value = data.cpu_threshold || 80;
-        document.getElementById('memoryThreshold').value = data.memory_threshold || 85;
-    } catch (error) {
-        document.getElementById('monitoringText').textContent = 'Failed to load status';
-    }
-}
-
-async function startMonitoring() {
-    try {
-        const response = await fetch('/api/monitoring/start', {
-            method: 'POST',
-            headers: csrfHeaders()
-        });
-        const data = await response.json();
-        
-        if (data.success) {
-            showToast('success', 'Monitoring started');
-            loadMonitoringStatus();
-        } else {
-            showToast('error', data.error);
-        }
-    } catch (error) {
-        showToast('error', 'Failed to start monitoring');
-    }
-}
-
-async function stopMonitoring() {
-    try {
-        const response = await fetch('/api/monitoring/stop', {
-            method: 'POST',
-            headers: csrfHeaders()
-        });
-        const data = await response.json();
-        
-        if (data.success) {
-            showToast('success', 'Monitoring stopped');
-            loadMonitoringStatus();
-        } else {
-            showToast('error', data.error);
-        }
-    } catch (error) {
-        showToast('error', 'Failed to stop monitoring');
-    }
-}
-
-async function updateThresholds() {
-    const cpu = parseInt(document.getElementById('cpuThreshold').value);
-    const memory = parseInt(document.getElementById('memoryThreshold').value);
-    
-    try {
-        const response = await fetch('/api/monitoring/thresholds', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
-            body: JSON.stringify({ cpu_threshold: cpu, memory_threshold: memory })
-        });
-        const data = await response.json();
-        
-        if (data.success) {
-            showToast('success', 'Thresholds updated');
-        } else {
-            showToast('error', data.error);
-        }
-    } catch (error) {
-        showToast('error', 'Failed to update thresholds');
-    }
-}
-
-// =============================================================================
-// Vulnerability Scanning Functions
-// =============================================================================
-
-async function loadScannerStatus() {
-    try {
-        const response = await fetch('/api/vulnerabilities/status');
-        const data = await response.json();
-        
-        const statusEl = document.getElementById('scannerText');
-        if (data.available) {
-            statusEl.innerHTML = '✅ Trivy scanner is available';
-            document.getElementById('scanBtn').disabled = false;
-        } else {
-            statusEl.innerHTML = '⚠️ Trivy not installed. <a href="https://trivy.dev" target="_blank">Install Trivy</a>';
-            document.getElementById('scanBtn').disabled = true;
-        }
-    } catch (error) {
-        document.getElementById('scannerText').textContent = '❌ Failed to check scanner status';
-    }
-}
-
-async function scanImage() {
-    const image = document.getElementById('scanImage').value.trim();
-    if (!image) {
-        showToast('error', 'Please enter an image name');
-        return;
-    }
-    
-    const severity = document.getElementById('scanSeverity').value;
-    const btn = document.getElementById('scanBtn');
-    const resultsDiv = document.getElementById('scanResults');
-    const contentDiv = document.getElementById('scanResultsContent');
-    
-    btn.disabled = true;
-    btn.textContent = '⏳ Scanning...';
-    resultsDiv.style.display = 'block';
-    contentDiv.innerHTML = '<div class="loading">Scanning image for vulnerabilities...</div>';
-    
-    try {
-        const response = await fetch(`/api/vulnerabilities/scan?image=${encodeURIComponent(image)}&severity=${severity}`);
-        const data = await response.json();
-        
-        if (data.success) {
-            const summary = data.summary;
-            let html = `
-                <div class="scan-summary">
-                    <span class="severity-badge critical">${summary.critical} Critical</span>
-                    <span class="severity-badge high">${summary.high} High</span>
-                    <span class="severity-badge medium">${summary.medium} Medium</span>
-                    <span class="severity-badge low">${summary.low} Low</span>
-                </div>
-            `;
-            
-            if (data.vulnerabilities && data.vulnerabilities.length > 0) {
-                html += `
-                    <table class="inspect-table vuln-table">
-                        <thead>
-                            <tr><th>ID</th><th>Severity</th><th>Package</th><th>Fixed In</th></tr>
-                        </thead>
-                        <tbody>
-                            ${data.vulnerabilities.slice(0, 50).map(v => `
-                                <tr class="severity-row-${v.severity.toLowerCase()}">
-                                    <td><a href="https://nvd.nist.gov/vuln/detail/${v.id}" target="_blank">${escapeHtml(v.id)}</a></td>
-                                    <td><span class="severity-badge ${v.severity.toLowerCase()}">${v.severity}</span></td>
-                                    <td>${escapeHtml(v.package)}@${escapeHtml(v.version)}</td>
-                                    <td>${v.fixed_version || 'N/A'}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                `;
-                if (data.vulnerabilities.length > 50) {
-                    html += `<p class="text-muted">Showing first 50 of ${data.vulnerabilities.length} vulnerabilities</p>`;
-                }
-            } else {
-                html += '<p class="success-text">✅ No vulnerabilities found!</p>';
-            }
-            
-            contentDiv.innerHTML = html;
-        } else {
-            contentDiv.innerHTML = `<p class="error">${escapeHtml(data.error)}</p>`;
-        }
-    } catch (error) {
-        contentDiv.innerHTML = '<p class="error">Failed to scan image</p>';
-    } finally {
-        btn.disabled = false;
-        btn.textContent = '🔍 Scan Image';
     }
 }
 
@@ -481,6 +615,14 @@ async function scanImage() {
 // =============================================================================
 
 document.addEventListener('DOMContentLoaded', function() {
+    // Restore last active tab
+    const savedTab = localStorage.getItem('dockdash-settings-tab');
+    if (savedTab) {
+        const tabBtn = document.querySelector(`.settings-tabs .tab-btn[onclick*="${savedTab}"]`);
+        if (tabBtn) tabBtn.click();
+    }
+    
+    // Load all data
     loadWebhooks();
     loadMonitoringStatus();
     loadScannerStatus();

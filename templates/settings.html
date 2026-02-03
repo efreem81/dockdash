@@ -8,139 +8,266 @@
         <h1>⚙️ Settings</h1>
     </div>
 
-    <div class="settings-grid">
-        <!-- Account Section -->
-        <div class="settings-section">
-            <h2>👤 Account</h2>
-            <div class="settings-card">
-                <p>Logged in as: <strong>{{ current_user.username }}</strong></p>
-                <a href="{{ url_for('auth.change_password') }}" class="btn btn-secondary">
-                    🔐 Change Password
-                </a>
-            </div>
-        </div>
+    <!-- Tab Navigation -->
+    <div class="settings-tabs">
+        <button class="tab-btn active" onclick="showSettingsTab('notifications')">🔔 Notifications</button>
+        <button class="tab-btn" onclick="showSettingsTab('security')">🛡️ Security Scanning</button>
+        <button class="tab-btn" onclick="showSettingsTab('monitoring')">📊 Monitoring</button>
+        <button class="tab-btn" onclick="showSettingsTab('maintenance')">🧹 Maintenance</button>
+        <button class="tab-btn" onclick="showSettingsTab('account')">👤 Account</button>
+    </div>
 
-        <!-- Webhooks Section -->
+    <!-- Notifications Tab -->
+    <div class="settings-tab-content" id="tab-notifications">
         <div class="settings-section">
-            <h2>🔔 Webhooks & Notifications</h2>
+            <div class="section-header">
+                <h2>🔔 Webhook Notifications</h2>
+                <p class="section-desc">Get alerted when containers stop, become unhealthy, or exceed resource thresholds.</p>
+            </div>
+            
+            <div class="webhooks-list" id="webhooksList">
+                <div class="loading">Loading webhooks...</div>
+            </div>
+
+            <button class="btn btn-primary" onclick="showAddWebhook()">
+                ➕ Add Webhook
+            </button>
+        </div>
+    </div>
+
+    <!-- Security Scanning Tab -->
+    <div class="settings-tab-content" id="tab-security" style="display: none;">
+        <div class="settings-section">
+            <div class="section-header">
+                <h2>🛡️ Vulnerability Scanning</h2>
+                <p class="section-desc">Scan container images for known CVEs using Trivy. Results appear on the Dashboard.</p>
+            </div>
+
+            <!-- Scanner Status -->
+            <div class="status-card" id="scannerStatusCard">
+                <div class="status-indicator" id="scannerIndicator">⏳</div>
+                <div class="status-info">
+                    <strong id="scannerStatusText">Checking scanner...</strong>
+                    <span class="status-detail" id="lastScanInfo"></span>
+                </div>
+            </div>
+
+            <!-- Scan Now -->
+            <div class="action-card">
+                <div class="action-info">
+                    <h3>🔍 Scan All Container Images</h3>
+                    <p>Immediately scan all images from running containers for vulnerabilities.</p>
+                </div>
+                <div class="action-buttons">
+                    <button class="btn btn-primary btn-lg" onclick="runFullScan()" id="fullScanBtn">
+                        ▶️ Scan Now
+                    </button>
+                </div>
+                <div class="scan-progress" id="scanProgress" style="display: none;">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="scanProgressFill"></div>
+                    </div>
+                    <span class="progress-text" id="scanProgressText">Scanning...</span>
+                </div>
+            </div>
+
+            <!-- Schedule Settings -->
             <div class="settings-card">
-                <p>Configure webhooks to receive alerts for container events.</p>
+                <h3>⏰ Scheduled Scanning</h3>
+                <p class="card-desc">Automatically scan all container images on a schedule.</p>
                 
-                <div id="webhooksList">
-                    <div class="loading">Loading webhooks...</div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="scanEnabled" onchange="updateScanSchedule()">
+                            <span>Enable scheduled scanning</span>
+                        </label>
+                    </div>
                 </div>
 
-                <button class="btn btn-primary" onclick="showAddWebhook()">
-                    ➕ Add Webhook
+                <div class="form-row" id="scheduleOptions">
+                    <div class="form-group">
+                        <label for="scheduleType">Frequency</label>
+                        <select id="scheduleType" onchange="updateScheduleUI()">
+                            <option value="daily">Daily</option>
+                            <option value="weekly">Weekly</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="dayGroup" style="display: none;">
+                        <label for="scheduleDay">Day</label>
+                        <select id="scheduleDay">
+                            <option value="0">Monday</option>
+                            <option value="1">Tuesday</option>
+                            <option value="2">Wednesday</option>
+                            <option value="3">Thursday</option>
+                            <option value="4">Friday</option>
+                            <option value="5">Saturday</option>
+                            <option value="6">Sunday</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="scheduleHour">Time</label>
+                        <div class="time-input">
+                            <input type="number" id="scheduleHour" min="0" max="23" value="3" class="time-part">
+                            <span>:</span>
+                            <input type="number" id="scheduleMinute" min="0" max="59" value="0" class="time-part">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="severityFilter">Severity Filter</label>
+                        <select id="severityFilter">
+                            <option value="CRITICAL,HIGH,MEDIUM,LOW">All (Critical, High, Medium, Low)</option>
+                            <option value="CRITICAL,HIGH,MEDIUM">Critical, High, Medium</option>
+                            <option value="CRITICAL,HIGH">Critical, High only</option>
+                            <option value="CRITICAL">Critical only</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button class="btn btn-secondary" onclick="saveScanSettings()">
+                    💾 Save Schedule
                 </button>
             </div>
         </div>
+    </div>
 
-        <!-- Cleanup Section -->
+    <!-- Monitoring Tab -->
+    <div class="settings-tab-content" id="tab-monitoring" style="display: none;">
         <div class="settings-section">
-            <h2>🧹 Cleanup</h2>
-            <div class="settings-card">
-                <p>Free up disk space by removing unused Docker resources.</p>
-                
-                <div class="cleanup-buttons">
-                    <button class="btn btn-warning" onclick="pruneContainers()">
-                        🗑️ Prune Stopped Containers
+            <div class="section-header">
+                <h2>📊 Resource Monitoring</h2>
+                <p class="section-desc">Monitor container CPU and memory usage. Get alerts when thresholds are exceeded.</p>
+            </div>
+
+            <!-- Monitoring Status -->
+            <div class="status-card">
+                <div class="status-indicator" id="monitoringIndicator">⏸️</div>
+                <div class="status-info">
+                    <strong id="monitoringStatusText">Loading...</strong>
+                </div>
+                <div class="status-actions">
+                    <button class="btn btn-success" id="startMonitoringBtn" onclick="startMonitoring()">
+                        ▶️ Start
                     </button>
-                    <button class="btn btn-warning" onclick="pruneImages()">
-                        🗑️ Prune Unused Images
-                    </button>
-                    <button class="btn btn-warning" onclick="pruneVolumes()">
-                        🗑️ Prune Unused Volumes
-                    </button>
-                    <button class="btn btn-danger" onclick="pruneAll()">
-                        🧹 Prune All Unused Resources
+                    <button class="btn btn-warning" id="stopMonitoringBtn" onclick="stopMonitoring()" style="display: none;">
+                        ⏹️ Stop
                     </button>
                 </div>
             </div>
-        </div>
 
-        <!-- Images Section -->
-        <div class="settings-section">
-            <h2>📦 Images</h2>
+            <!-- Thresholds -->
             <div class="settings-card">
-                <p>Manage Docker images on this host.</p>
+                <h3>⚠️ Alert Thresholds</h3>
+                <p class="card-desc">Send alerts when containers exceed these resource limits.</p>
+                
+                <div class="form-row threshold-row">
+                    <div class="form-group">
+                        <label for="cpuThreshold">CPU Alert Threshold</label>
+                        <div class="input-with-suffix">
+                            <input type="number" id="cpuThreshold" value="80" min="0" max="100">
+                            <span class="suffix">%</span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="memoryThreshold">Memory Alert Threshold</label>
+                        <div class="input-with-suffix">
+                            <input type="number" id="memoryThreshold" value="85" min="0" max="100">
+                            <span class="suffix">%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <button class="btn btn-secondary" onclick="updateThresholds()">
+                    💾 Save Thresholds
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Maintenance Tab -->
+    <div class="settings-tab-content" id="tab-maintenance" style="display: none;">
+        <div class="settings-section">
+            <div class="section-header">
+                <h2>🧹 System Maintenance</h2>
+                <p class="section-desc">Clean up unused Docker resources to free disk space.</p>
+            </div>
+
+            <div class="maintenance-grid">
+                <div class="maintenance-card">
+                    <div class="maintenance-icon">📦</div>
+                    <h3>Stopped Containers</h3>
+                    <p>Remove all stopped containers</p>
+                    <button class="btn btn-warning" onclick="pruneContainers()">
+                        🗑️ Prune Containers
+                    </button>
+                </div>
+
+                <div class="maintenance-card">
+                    <div class="maintenance-icon">🖼️</div>
+                    <h3>Unused Images</h3>
+                    <p>Remove dangling and unused images</p>
+                    <button class="btn btn-warning" onclick="pruneImages()">
+                        🗑️ Prune Images
+                    </button>
+                </div>
+
+                <div class="maintenance-card">
+                    <div class="maintenance-icon">💾</div>
+                    <h3>Unused Volumes</h3>
+                    <p>Remove unused volumes (data loss possible!)</p>
+                    <button class="btn btn-danger" onclick="pruneVolumes()">
+                        🗑️ Prune Volumes
+                    </button>
+                </div>
+
+                <div class="maintenance-card maintenance-card-full">
+                    <div class="maintenance-icon">🧹</div>
+                    <h3>Full System Cleanup</h3>
+                    <p>Remove all unused containers, images, and volumes at once</p>
+                    <button class="btn btn-danger btn-lg" onclick="pruneAll()">
+                        🧹 Prune Everything
+                    </button>
+                </div>
+            </div>
+
+            <!-- Images Browser -->
+            <div class="settings-card">
+                <h3>📦 Image Browser</h3>
+                <p class="card-desc">View and manage Docker images on this host.</p>
                 <button class="btn btn-secondary" onclick="showImagesModal()">
                     📦 View Images
                 </button>
             </div>
         </div>
+    </div>
 
-        <!-- Monitoring Section -->
+    <!-- Account Tab -->
+    <div class="settings-tab-content" id="tab-account" style="display: none;">
         <div class="settings-section">
-            <h2>📊 Background Monitoring</h2>
-            <div class="settings-card">
-                <p>Automatically monitor containers and send alerts when thresholds are exceeded.</p>
-                
-                <div class="monitoring-status" id="monitoringStatus">
-                    <span class="status-indicator" id="monitoringIndicator">⏸️</span>
-                    <span id="monitoringText">Loading...</span>
-                </div>
-                
-                <div class="form-group">
-                    <label for="cpuThreshold">CPU Alert Threshold (%)</label>
-                    <input type="number" id="cpuThreshold" value="80" min="0" max="100">
-                </div>
-                <div class="form-group">
-                    <label for="memoryThreshold">Memory Alert Threshold (%)</label>
-                    <input type="number" id="memoryThreshold" value="85" min="0" max="100">
-                </div>
-                
-                <div class="monitoring-actions">
-                    <button class="btn btn-success" id="startMonitoringBtn" onclick="startMonitoring()">
-                        ▶️ Start Monitoring
-                    </button>
-                    <button class="btn btn-warning" id="stopMonitoringBtn" onclick="stopMonitoring()" style="display: none;">
-                        ⏹️ Stop Monitoring
-                    </button>
-                    <button class="btn btn-secondary" onclick="updateThresholds()">
-                        💾 Save Thresholds
-                    </button>
-                </div>
+            <div class="section-header">
+                <h2>👤 Account Settings</h2>
             </div>
-        </div>
 
-        <!-- Vulnerability Scanning Section -->
-        <div class="settings-section">
-            <h2>🛡️ Vulnerability Scanning</h2>
             <div class="settings-card">
-                <p>Scan Docker images for known security vulnerabilities using Trivy.</p>
-                
-                <div class="scanner-status" id="scannerStatus">
-                    <span id="scannerText">Checking scanner...</span>
+                <div class="account-info">
+                    <div class="avatar">{{ current_user.username[0]|upper }}</div>
+                    <div class="user-details">
+                        <strong>{{ current_user.username }}</strong>
+                        <span class="user-meta">Account created {{ current_user.created_at.strftime('%B %d, %Y') if current_user.created_at else 'N/A' }}</span>
+                    </div>
                 </div>
                 
-                <div class="form-group">
-                    <label for="scanImage">Image to Scan</label>
-                    <input type="text" id="scanImage" placeholder="nginx:latest">
-                </div>
-                <div class="form-group">
-                    <label for="scanSeverity">Severity Filter</label>
-                    <select id="scanSeverity">
-                        <option value="CRITICAL,HIGH">Critical & High</option>
-                        <option value="CRITICAL,HIGH,MEDIUM">Critical, High & Medium</option>
-                        <option value="CRITICAL,HIGH,MEDIUM,LOW">All Severities</option>
-                        <option value="CRITICAL">Critical Only</option>
-                    </select>
-                </div>
-                
-                <button class="btn btn-primary" onclick="scanImage()" id="scanBtn">
-                    🔍 Scan Image
-                </button>
-                
-                <div id="scanResults" style="display: none; margin-top: 1rem;">
-                    <h4>Scan Results</h4>
-                    <div id="scanResultsContent"></div>
-                </div>
+                <a href="{{ url_for('auth.change_password') }}" class="btn btn-secondary">
+                    🔐 Change Password
+                </a>
             </div>
         </div>
     </div>
 
-    <!-- Add Webhook Modal -->
+    <!-- Webhook Modal -->
     <div class="modal-overlay" id="webhookModal" style="display: none;" onclick="closeWebhookModal(event)">
         <div class="modal" onclick="event.stopPropagation()">
             <div class="modal-header">
@@ -149,42 +276,76 @@
             </div>
             <div class="modal-body">
                 <input type="hidden" id="webhookId">
+                
                 <div class="form-group">
                     <label for="webhookName">Name</label>
-                    <input type="text" id="webhookName" placeholder="My Discord Server" required>
+                    <input type="text" id="webhookName" placeholder="e.g., Production Alerts" required>
                 </div>
-                <div class="form-group">
-                    <label for="webhookType">Type</label>
-                    <select id="webhookType">
-                        <option value="discord">Discord</option>
-                        <option value="slack">Slack</option>
-                        <option value="telegram">Telegram</option>
-                        <option value="generic">Generic Webhook</option>
-                    </select>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="webhookType">Platform</label>
+                        <select id="webhookType">
+                            <option value="discord">Discord</option>
+                            <option value="slack">Slack</option>
+                            <option value="telegram">Telegram</option>
+                            <option value="generic">Generic Webhook</option>
+                        </select>
+                    </div>
                 </div>
+                
                 <div class="form-group">
                     <label for="webhookUrl">Webhook URL</label>
-                    <input type="url" id="webhookUrl" placeholder="https://discord.com/api/webhooks/..." required>
+                    <input type="url" id="webhookUrl" placeholder="https://..." required>
+                    <span class="form-hint">Discord: Settings → Integrations → Webhooks</span>
                 </div>
                 
-                <h4>Alert Settings</h4>
-                <div class="form-group checkbox-group">
-                    <label><input type="checkbox" id="alertStop" checked> Container stopped</label>
-                    <label><input type="checkbox" id="alertStart"> Container started</label>
-                    <label><input type="checkbox" id="alertHealth" checked> Container unhealthy</label>
-                </div>
-                <div class="form-group">
-                    <label for="alertCpu">CPU threshold (%)</label>
-                    <input type="number" id="alertCpu" value="90" min="0" max="100">
-                </div>
-                <div class="form-group">
-                    <label for="alertMemory">Memory threshold (%)</label>
-                    <input type="number" id="alertMemory" value="90" min="0" max="100">
+                <h4>Alert Triggers</h4>
+                <div class="checkbox-grid">
+                    <label class="checkbox-card">
+                        <input type="checkbox" id="alertStop" checked>
+                        <span class="checkbox-label">
+                            <span class="checkbox-icon">⏹️</span>
+                            Container stopped
+                        </span>
+                    </label>
+                    <label class="checkbox-card">
+                        <input type="checkbox" id="alertStart">
+                        <span class="checkbox-label">
+                            <span class="checkbox-icon">▶️</span>
+                            Container started
+                        </span>
+                    </label>
+                    <label class="checkbox-card">
+                        <input type="checkbox" id="alertHealth" checked>
+                        <span class="checkbox-label">
+                            <span class="checkbox-icon">❤️</span>
+                            Health check failed
+                        </span>
+                    </label>
                 </div>
                 
-                <div class="form-actions">
+                <h4>Resource Alerts</h4>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="alertCpu">CPU threshold</label>
+                        <div class="input-with-suffix">
+                            <input type="number" id="alertCpu" value="90" min="0" max="100">
+                            <span class="suffix">%</span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="alertMemory">Memory threshold</label>
+                        <div class="input-with-suffix">
+                            <input type="number" id="alertMemory" value="90" min="0" max="100">
+                            <span class="suffix">%</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="modal-actions">
                     <button class="btn btn-secondary" onclick="testWebhook()">🧪 Test</button>
-                    <button class="btn btn-primary" onclick="saveWebhook()">💾 Save</button>
+                    <button class="btn btn-primary" onclick="saveWebhook()">💾 Save Webhook</button>
                 </div>
             </div>
         </div>

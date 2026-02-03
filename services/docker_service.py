@@ -68,13 +68,45 @@ def get_container_info(container):
     health = state.get('Health', {})
     health_status = health.get('Status') if health else None
     
+    # Extract image information
+    image = container.image
+    image_tag = image.tags[0] if image and image.tags else 'unknown'
+    image_id = image.short_id if image else None
+    image_created = None
+    image_created_human = None
+    image_digest = None
+    
+    if image:
+        try:
+            # Get image creation date
+            img_created_str = image.attrs.get('Created', '')
+            if img_created_str:
+                img_created_dt = datetime.fromisoformat(img_created_str.replace('Z', '+00:00'))
+                image_created = img_created_str[:19].replace('T', ' ')
+                # Calculate image age
+                age_seconds = (datetime.now(img_created_dt.tzinfo) - img_created_dt).total_seconds()
+                image_created_human = _format_age(age_seconds)
+            
+            # Get image digest (short form)
+            repo_digests = image.attrs.get('RepoDigests', [])
+            if repo_digests:
+                # Format: repo@sha256:abc123... -> extract short digest
+                digest_full = repo_digests[0].split('@')[-1] if '@' in repo_digests[0] else ''
+                if digest_full.startswith('sha256:'):
+                    image_digest = digest_full[7:19]  # First 12 chars of digest
+        except Exception:
+            pass
+    
     info = {
         'id': container.short_id,
         'full_id': container.id,
         'name': container.name,
         'status': container.status,
-        'image': container.image.tags[0] if container.image.tags else 'unknown',
-        'image_id': container.image.short_id if container.image else None,
+        'image': image_tag,
+        'image_id': image_id,
+        'image_digest': image_digest,
+        'image_created': image_created,
+        'image_age': image_created_human,
         'created': attrs['Created'][:19].replace('T', ' '),
         'started_at': started_at[:19].replace('T', ' ') if started_at else None,
         'uptime_seconds': uptime,
@@ -129,6 +161,39 @@ def _format_uptime(seconds):
     elif minutes > 0:
         return f"{minutes}m {secs}s"
     return f"{secs}s"
+
+
+def _format_age(seconds):
+    """Format age in seconds to human readable string (e.g., '3 months ago')."""
+    if seconds is None:
+        return None
+    
+    minutes = seconds / 60
+    hours = minutes / 60
+    days = hours / 24
+    weeks = days / 7
+    months = days / 30
+    years = days / 365
+    
+    if years >= 1:
+        y = int(years)
+        return f"{y} year{'s' if y != 1 else ''} ago"
+    elif months >= 1:
+        m = int(months)
+        return f"{m} month{'s' if m != 1 else ''} ago"
+    elif weeks >= 1:
+        w = int(weeks)
+        return f"{w} week{'s' if w != 1 else ''} ago"
+    elif days >= 1:
+        d = int(days)
+        return f"{d} day{'s' if d != 1 else ''} ago"
+    elif hours >= 1:
+        h = int(hours)
+        return f"{h} hour{'s' if h != 1 else ''} ago"
+    elif minutes >= 1:
+        m = int(minutes)
+        return f"{m} minute{'s' if m != 1 else ''} ago"
+    return "just now"
 
 
 def _parse_env_vars(env_list):

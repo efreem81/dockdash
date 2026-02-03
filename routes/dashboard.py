@@ -28,10 +28,19 @@ def dashboard():
     host_ip = get_host_ip()
     docker_available = get_docker_client() is not None
     
+    # Get vulnerability scan results
+    from services.vulnerability_service import get_stored_vulnerabilities
+    vuln_results = get_stored_vulnerabilities()
+    
     # Group containers by compose project
     compose_groups = {}
     standalone = []
     for c in containers:
+        # Attach vulnerability data to each container
+        image = c.get('image', '')
+        if image in vuln_results:
+            c['vulnerabilities'] = vuln_results[image]
+        
         project = c.get('compose_project')
         if project:
             if project not in compose_groups:
@@ -46,7 +55,8 @@ def dashboard():
                          standalone_containers=standalone,
                          host_ip=host_ip, 
                          show_all=show_all,
-                         docker_available=docker_available)
+                         docker_available=docker_available,
+                         vuln_results=vuln_results)
 
 
 @dashboard_bp.route('/health')
