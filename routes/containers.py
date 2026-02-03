@@ -190,13 +190,13 @@ def api_recreate_container(container_id):
 def api_update_all_containers():
     """Update all containers that have available updates."""
     from services.update_service import get_stored_updates, clear_update_status
-    from services.docker_service import list_containers
+    from services.docker_service import get_all_containers
     
     data = request.get_json() or {}
     container_ids = data.get('container_ids', [])  # Optional: specific containers to update
     
     # Get containers and their update status
-    containers = list_containers()
+    containers = get_all_containers(show_all=True)
     stored_updates = get_stored_updates()
     
     results = []
