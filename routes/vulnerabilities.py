@@ -79,11 +79,16 @@ def api_clear_cache():
 @login_required
 def api_scan_all_images():
     """Scan all container images for vulnerabilities."""
-    data = request.get_json() or {}
-    severity = data.get('severity')  # Use settings default if not provided
-    
-    result = scan_all_container_images(severity)
-    return jsonify(result)
+    try:
+        data = request.get_json(silent=True) or {}
+        severity = data.get('severity')  # Use settings default if not provided
+        
+        result = scan_all_container_images(severity)
+        return jsonify(result)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @vulnerabilities_bp.route('/vulnerabilities/results')

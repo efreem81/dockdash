@@ -1061,7 +1061,8 @@ async function scanAllVulnerabilities() {
     try {
         const response = await fetch('/api/vulnerabilities/scan-all', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...csrfHeaders() }
+            headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
+            body: JSON.stringify({})
         });
         const data = await response.json();
         

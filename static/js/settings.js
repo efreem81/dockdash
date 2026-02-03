@@ -374,7 +374,8 @@ async function runFullScan() {
     try {
         const response = await fetch('/api/vulnerabilities/scan-all', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...csrfHeaders() }
+            headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
+            body: JSON.stringify({})
         });
         const data = await response.json();
         
@@ -396,7 +397,8 @@ async function runFullScan() {
             if (progressDiv) progressDiv.style.display = 'none';
         }
     } catch (error) {
-        showToast('error', 'Failed to start scan');
+        console.error('Scan error:', error);
+        showToast('error', 'Failed to start scan: ' + (error.message || 'Network error'));
         if (progressDiv) progressDiv.style.display = 'none';
     } finally {
         if (btn) {
