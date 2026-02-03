@@ -36,7 +36,9 @@ def init_database():
     
     # Import app after ensuring directory exists
     try:
-        from app import app, db, init_default_user
+        from config import create_app, db
+        from models import User
+        app = create_app()
     except Exception as e:
         print(f"Error importing app: {e}", file=sys.stderr)
         return 1
@@ -47,8 +49,19 @@ def init_database():
             db.create_all()
             print("Database tables created successfully")
             
-            print("Initializing default user...")
-            init_default_user()
+            # Check if default user exists
+            if User.query.count() == 0:
+                print("Creating default user...")
+                default_username = os.environ.get('DEFAULT_USERNAME', 'admin')
+                default_password = os.environ.get('DEFAULT_PASSWORD', 'dockdash')
+                user = User(username=default_username)
+                user.set_password(default_password)
+                db.session.add(user)
+                db.session.commit()
+                print(f"Created default user: {default_username}")
+            else:
+                print("Default user already exists")
+            
             print("Database initialization complete")
             return 0
         except Exception as e:
