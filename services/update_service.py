@@ -6,7 +6,7 @@ import logging
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 
-from services.docker_service import list_containers
+from services.docker_service import get_all_containers
 from services.image_service import check_image_update
 
 logger = logging.getLogger('update_checker')
@@ -171,7 +171,7 @@ def check_all_container_images() -> Dict[str, Any]:
         _log(logging.ERROR, f"Could not update check start time: {e}")
     
     # Get all unique images
-    containers = list_containers()
+    containers = get_all_containers(show_all=True)
     images = list(set(c.get('image') for c in containers if c.get('image') and c.get('image') != 'unknown'))
     
     _log(logging.INFO, f"Checking {len(images)} unique images for updates")
