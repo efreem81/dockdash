@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - DockDash{% endblock %}
+
+{% block content %}
+<div class="settings-page">
+    <div class="page-header">
+        <h1>⚙️ Settings</h1>
+    </div>
+
+    <div class="settings-grid">
+        <!-- Account Section -->
+        <div class="settings-section">
+            <h2>👤 Account</h2>
+            <div class="settings-card">
+                <p>Logged in as: <strong>{{ current_user.username }}</strong></p>
+                <a href="{{ url_for('auth.change_password') }}" class="btn btn-secondary">
+                    🔐 Change Password
+                </a>
+            </div>
+        </div>
+
+        <!-- Webhooks Section -->
+        <div class="settings-section">
+            <h2>🔔 Webhooks & Notifications</h2>
+            <div class="settings-card">
+                <p>Configure webhooks to receive alerts for container events.</p>
+                
+                <div id="webhooksList">
+                    <div class="loading">Loading webhooks...</div>
+                </div>
+
+                <button class="btn btn-primary" onclick="showAddWebhook()">
+                    ➕ Add Webhook
+                </button>
+            </div>
+        </div>
+
+        <!-- Cleanup Section -->
+        <div class="settings-section">
+            <h2>🧹 Cleanup</h2>
+            <div class="settings-card">
+                <p>Free up disk space by removing unused Docker resources.</p>
+                
+                <div class="cleanup-buttons">
+                    <button class="btn btn-warning" onclick="pruneContainers()">
+                        🗑️ Prune Stopped Containers
+                    </button>
+                    <button class="btn btn-warning" onclick="pruneImages()">
+                        🗑️ Prune Unused Images
+                    </button>
+                    <button class="btn btn-warning" onclick="pruneVolumes()">
+                        🗑️ Prune Unused Volumes
+                    </button>
+                    <button class="btn btn-danger" onclick="pruneAll()">
+                        🧹 Prune All Unused Resources
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Images Section -->
+        <div class="settings-section">
+            <h2>📦 Images</h2>
+            <div class="settings-card">
+                <p>Manage Docker images on this host.</p>
+                <button class="btn btn-secondary" onclick="showImagesModal()">
+                    📦 View Images
+                </button>
+            </div>
+        </div>
+
+        <!-- Monitoring Section -->
+        <div class="settings-section">
+            <h2>📊 Background Monitoring</h2>
+            <div class="settings-card">
+                <p>Automatically monitor containers and send alerts when thresholds are exceeded.</p>
+                
+                <div class="monitoring-status" id="monitoringStatus">
+                    <span class="status-indicator" id="monitoringIndicator">⏸️</span>
+                    <span id="monitoringText">Loading...</span>
+                </div>
+                
+                <div class="form-group">
+                    <label for="cpuThreshold">CPU Alert Threshold (%)</label>
+                    <input type="number" id="cpuThreshold" value="80" min="0" max="100">
+                </div>
+                <div class="form-group">
+                    <label for="memoryThreshold">Memory Alert Threshold (%)</label>
+                    <input type="number" id="memoryThreshold" value="85" min="0" max="100">
+                </div>
+                
+                <div class="monitoring-actions">
+                    <button class="btn btn-success" id="startMonitoringBtn" onclick="startMonitoring()">
+                        ▶️ Start Monitoring
+                    </button>
+                    <button class="btn btn-warning" id="stopMonitoringBtn" onclick="stopMonitoring()" style="display: none;">
+                        ⏹️ Stop Monitoring
+                    </button>
+                    <button class="btn btn-secondary" onclick="updateThresholds()">
+                        💾 Save Thresholds
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Vulnerability Scanning Section -->
+        <div class="settings-section">
+            <h2>🛡️ Vulnerability Scanning</h2>
+            <div class="settings-card">
+                <p>Scan Docker images for known security vulnerabilities using Trivy.</p>
+                
+                <div class="scanner-status" id="scannerStatus">
+                    <span id="scannerText">Checking scanner...</span>
+                </div>
+                
+                <div class="form-group">
+                    <label for="scanImage">Image to Scan</label>
+                    <input type="text" id="scanImage" placeholder="nginx:latest">
+                </div>
+                <div class="form-group">
+                    <label for="scanSeverity">Severity Filter</label>
+                    <select id="scanSeverity">
+                        <option value="CRITICAL,HIGH">Critical & High</option>
+                        <option value="CRITICAL,HIGH,MEDIUM">Critical, High & Medium</option>
+                        <option value="CRITICAL,HIGH,MEDIUM,LOW">All Severities</option>
+                        <option value="CRITICAL">Critical Only</option>
+                    </select>
+                </div>
+                
+                <button class="btn btn-primary" onclick="scanImage()" id="scanBtn">
+                    🔍 Scan Image
+                </button>
+                
+                <div id="scanResults" style="display: none; margin-top: 1rem;">
+                    <h4>Scan Results</h4>
+                    <div id="scanResultsContent"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Webhook Modal -->
+    <div class="modal-overlay" id="webhookModal" style="display: none;" onclick="closeWebhookModal(event)">
+        <div class="modal" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <div class="modal-title" id="webhookModalTitle">➕ Add Webhook</div>
+                <button class="modal-close" onclick="closeWebhookModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="webhookId">
+                <div class="form-group">
+                    <label for="webhookName">Name</label>
+                    <input type="text" id="webhookName" placeholder="My Discord Server" required>
+                </div>
+                <div class="form-group">
+                    <label for="webhookType">Type</label>
+                    <select id="webhookType">
+                        <option value="discord">Discord</option>
+                        <option value="slack">Slack</option>
+                        <option value="telegram">Telegram</option>
+                        <option value="generic">Generic Webhook</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="webhookUrl">Webhook URL</label>
+                    <input type="url" id="webhookUrl" placeholder="https://discord.com/api/webhooks/..." required>
+                </div>
+                
+                <h4>Alert Settings</h4>
+                <div class="form-group checkbox-group">
+                    <label><input type="checkbox" id="alertStop" checked> Container stopped</label>
+                    <label><input type="checkbox" id="alertStart"> Container started</label>
+                    <label><input type="checkbox" id="alertHealth" checked> Container unhealthy</label>
+                </div>
+                <div class="form-group">
+                    <label for="alertCpu">CPU threshold (%)</label>
+                    <input type="number" id="alertCpu" value="90" min="0" max="100">
+                </div>
+                <div class="form-group">
+                    <label for="alertMemory">Memory threshold (%)</label>
+                    <input type="number" id="alertMemory" value="90" min="0" max="100">
+                </div>
+                
+                <div class="form-actions">
+                    <button class="btn btn-secondary" onclick="testWebhook()">🧪 Test</button>
+                    <button class="btn btn-primary" onclick="saveWebhook()">💾 Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Images Modal -->
+    <div class="modal-overlay" id="imagesModal" style="display: none;" onclick="closeImagesModal(event)">
+        <div class="modal modal-lg" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <div class="modal-title">📦 Docker Images</div>
+                <button class="modal-close" onclick="closeImagesModal()">×</button>
+            </div>
+            <div class="modal-body" id="imagesContent">
+                <div class="loading">Loading images...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/settings.js') }}"></script>
+{% endblock %}
