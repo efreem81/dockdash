@@ -16,16 +16,16 @@
             <span class="brand-name">DockDash</span>
         </div>
         <div class="nav-links">
-            <a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}">
+            <a href="{{ url_for('dashboard.dashboard') }}" class="{% if request.endpoint == 'dashboard.dashboard' %}active{% endif %}">
                 <span class="icon">📊</span> Dashboard
             </a>
-            <a href="{{ url_for('url_list') }}" class="{% if request.endpoint in ['url_list', 'add_url', 'edit_url'] %}active{% endif %}">
+            <a href="{{ url_for('urls.url_list') }}" class="{% if 'urls.' in request.endpoint %}active{% endif %}">
                 <span class="icon">🔗</span> URL Share
             </a>
-            <a href="{{ url_for('change_password') }}" class="{% if request.endpoint == 'change_password' %}active{% endif %}">
-                <span class="icon">🔐</span> Settings
+            <a href="{{ url_for('auth.settings') }}" class="{% if request.endpoint == 'auth.settings' %}active{% endif %}">
+                <span class="icon">⚙️</span> Settings
             </a>
-            <a href="{{ url_for('logout') }}" class="logout-btn">
+            <a href="{{ url_for('auth.logout') }}" class="logout-btn">
                 <span class="icon">🚪</span> Logout
             </a>
         </div>

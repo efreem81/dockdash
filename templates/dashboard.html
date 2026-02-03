@@ -29,6 +29,9 @@
                 <span class="toggle-slider"></span>
                 <span class="toggle-label">Show stopped containers</span>
             </label>
+            <button class="btn btn-secondary" onclick="checkAllImageUpdates()" id="checkUpdatesBtn" title="Check for image updates">
+                ⬆️ Check Updates
+            </button>
             <button class="btn btn-secondary" onclick="refreshContainers()">
                 🔄 Refresh
             </button>
@@ -45,6 +48,7 @@
     <div class="info-bar">
         <span class="host-ip">🌐 Host IP: <strong>{{ host_ip }}</strong></span>
         <span class="container-count">📦 Containers: <strong id="containerCount">{{ containers|length }}</strong></span>
+        <span class="update-count" id="updateCount" style="display: none;">⬆️ Updates: <strong id="updateCountValue">0</strong></span>
     </div>
 
     <!-- Search and Controls Bar -->
@@ -101,11 +105,23 @@
                  data-name="{{ container.name|lower }}"
                  data-status="{{ container.status }}"
                  data-image="{{ container.image|lower }}"
+                 data-image-full="{{ container.image }}"
                  data-created="{{ container.created }}"
+                 data-compose-project="{{ container.compose_project or '' }}"
                  data-id="{{ container.id }}">
                 <div class="container-header">
                     <h3 class="container-name">{{ container.name }}</h3>
-                    <span class="status-badge status-{{ container.status }}">{{ container.status }}</span>
+                    <div class="header-badges">
+                        {% if container.health_status %}
+                        <span class="health-badge health-{{ container.health_status }}" title="Health: {{ container.health_status }}">
+                            {% if container.health_status == 'healthy' %}💚{% elif container.health_status == 'unhealthy' %}❤️{% else %}💛{% endif %}
+                        </span>
+                        {% endif %}
+                        <span class="update-badge" data-image="{{ container.image }}" style="display: none;" title="Update available">
+                            ⬆️ Update
+                        </span>
+                        <span class="status-badge status-{{ container.status }}">{{ container.status }}</span>
+                    </div>
                 </div>
                 
                 <div class="container-details">
@@ -115,11 +131,46 @@
                     </div>
                     <div class="detail-row">
                         <span class="detail-label">Image:</span>
-                        <span class="detail-value">{{ container.image }}</span>
+                        <span class="detail-value image-value" data-image="{{ container.image }}">
+                            {{ container.image }}
+                            <span class="image-update-icon" style="display: none;" title="Checking for updates...">🔄</span>
+                        </span>
                     </div>
+                    {% if container.compose_project %}
+                    <div class="detail-row">
+                        <span class="detail-label">Project:</span>
+                        <span class="detail-value compose-project">📦 {{ container.compose_project }}</span>
+                    </div>
+                    {% endif %}
+                    {% if container.uptime_human %}
+                    <div class="detail-row">
+                        <span class="detail-label">Uptime:</span>
+                        <span class="detail-value">⏱️ {{ container.uptime_human }}</span>
+                    </div>
+                    {% endif %}
+                    {% if container.restart_count > 0 %}
+                    <div class="detail-row">
+                        <span class="detail-label">Restarts:</span>
+                        <span class="detail-value restart-count">🔁 {{ container.restart_count }}</span>
+                    </div>
+                    {% endif %}
                     <div class="detail-row">
                         <span class="detail-label">Created:</span>
                         <span class="detail-value">{{ container.created }}</span>
+                    </div>
+                </div>
+
+                <!-- Stats placeholder -->
+                <div class="container-stats" id="stats-{{ container.id }}" style="display: none;">
+                    <div class="stats-row">
+                        <span class="stat-label">CPU:</span>
+                        <span class="stat-value cpu-stat">-</span>
+                        <div class="stat-bar"><div class="stat-fill cpu-fill"></div></div>
+                    </div>
+                    <div class="stats-row">
+                        <span class="stat-label">Memory:</span>
+                        <span class="stat-value mem-stat">-</span>
+                        <div class="stat-bar"><div class="stat-fill mem-fill"></div></div>
                     </div>
                 </div>
 
@@ -150,19 +201,34 @@
 
                 <div class="container-actions">
                     {% if container.status == 'running' %}
-                    <button class="btn btn-warning btn-sm" onclick="restartContainer('{{ container.id }}', '{{ container.name }}')">
-                        🔄 Restart
+                    <button class="btn btn-warning btn-sm" onclick="restartContainer('{{ container.id }}', '{{ container.name }}')" title="Restart">
+                        🔄
                     </button>
-                    <button class="btn btn-danger btn-sm" onclick="stopContainer('{{ container.id }}', '{{ container.name }}')">
-                        ⏹️ Stop
+                    <button class="btn btn-danger btn-sm" onclick="stopContainer('{{ container.id }}', '{{ container.name }}')" title="Stop">
+                        ⏹️
+                    </button>
+                    <button class="btn btn-info btn-sm" onclick="toggleStats('{{ container.id }}')" title="Stats">
+                        📊
+                    </button>
+                    <button class="btn btn-secondary btn-sm" onclick="openExec('{{ container.id }}', '{{ container.name }}')" title="Execute Command">
+                        💻
                     </button>
                     {% else %}
-                    <button class="btn btn-success btn-sm" onclick="startContainer('{{ container.id }}', '{{ container.name }}')">
-                        ▶️ Start
+                    <button class="btn btn-success btn-sm" onclick="startContainer('{{ container.id }}', '{{ container.name }}')" title="Start">
+                        ▶️
+                    </button>
+                    <button class="btn btn-danger btn-sm" onclick="removeContainer('{{ container.id }}', '{{ container.name }}')" title="Remove">
+                        🗑️
                     </button>
                     {% endif %}
-                    <button class="btn btn-secondary btn-sm" onclick="openLogs('{{ container.id }}', '{{ container.name }}')">
-                        📜 Logs
+                    <button class="btn btn-secondary btn-sm" onclick="openLogs('{{ container.id }}', '{{ container.name }}')" title="Logs">
+                        📜
+                    </button>
+                    <button class="btn btn-secondary btn-sm" onclick="openInspect('{{ container.id }}', '{{ container.name }}')" title="Inspect">
+                        🔍
+                    </button>
+                    <button class="btn btn-info btn-sm" onclick="recreateContainer('{{ container.id }}', '{{ container.name }}')" title="Recreate (pull latest & restart)">
+                        🔃
                     </button>
                 </div>
             </div>
@@ -205,6 +271,7 @@
                     data-name="{{ container.name|lower }}"
                     data-status="{{ container.status }}"
                     data-image="{{ container.image|lower }}"
+                    data-image-full="{{ container.image }}"
                     data-created="{{ container.created }}"
                     data-id="{{ container.id }}">
                     <td class="cell-name">
@@ -213,7 +280,12 @@
                     <td>
                         <span class="status-badge status-{{ container.status }}">{{ container.status }}</span>
                     </td>
-                    <td class="cell-image">{{ container.image }}</td>
+                    <td class="cell-image">
+                        <span class="image-value" data-image="{{ container.image }}">
+                            {{ container.image }}
+                            <span class="update-badge table-update-badge" style="display: none;" title="Update available">⬆️</span>
+                        </span>
+                    </td>
                     <td class="cell-actions">
                         {% if container.status == 'running' %}
                         <button class="btn btn-warning btn-xs" onclick="restartContainer('{{ container.id }}', '{{ container.name }}')" title="Restart">
@@ -300,6 +372,47 @@
         </div>
     </div>
 
+    <!-- Exec modal -->
+    <div class="modal-overlay" id="execModal" style="display: none;" onclick="closeExec(event)">
+        <div class="modal" role="dialog" aria-modal="true" aria-label="Execute command" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <div class="modal-title" id="execTitle">💻 Execute Command</div>
+                <button class="modal-close" onclick="closeExec()" aria-label="Close">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="execCommand">Command</label>
+                    <input type="text" id="execCommand" placeholder="ls -la" class="exec-input" onkeydown="if(event.key==='Enter')runExec()">
+                </div>
+                <div class="form-group">
+                    <label for="execWorkdir">Working Directory (optional)</label>
+                    <input type="text" id="execWorkdir" placeholder="/app" class="exec-input">
+                </div>
+                <button class="btn btn-primary" onclick="runExec()">▶️ Run</button>
+            </div>
+            <pre class="exec-output" id="execOutput"></pre>
+        </div>
+    </div>
+
+    <!-- Inspect modal -->
+    <div class="modal-overlay" id="inspectModal" style="display: none;" onclick="closeInspect(event)">
+        <div class="modal modal-lg" role="dialog" aria-modal="true" aria-label="Container details" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <div class="modal-title" id="inspectTitle">🔍 Container Details</div>
+                <button class="modal-close" onclick="closeInspect()" aria-label="Close">×</button>
+            </div>
+            <div class="modal-body" id="inspectContent">
+                <div class="inspect-tabs">
+                    <button class="tab-btn active" onclick="showInspectTab('env')">Environment</button>
+                    <button class="tab-btn" onclick="showInspectTab('mounts')">Mounts</button>
+                    <button class="tab-btn" onclick="showInspectTab('networks')">Networks</button>
+                    <button class="tab-btn" onclick="showInspectTab('labels')">Labels</button>
+                </div>
+                <div class="inspect-tab-content" id="inspectTabContent"></div>
+            </div>
+        </div>
+    </div>
+
     <!-- Bottom pagination -->
     <div class="pagination-bar bottom" id="bottomPagination">
         <div class="pagination-controls">
@@ -313,594 +426,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
-// State management
-let currentView = 'card';
-let currentPage = 1;
-let pageSize = 25;
-let sortField = 'name';
-let sortDirection = 'asc';
-let searchTerm = '';
-let allContainers = [];
-let filteredContainers = [];
-
-// Initialize on page load
-document.addEventListener('DOMContentLoaded', function() {
-    // Gather all containers from DOM
-    const cards = document.querySelectorAll('.container-card[data-name]');
-    cards.forEach(card => {
-        allContainers.push({
-            element: card,
-            name: card.dataset.name,
-            status: card.dataset.status,
-            image: card.dataset.image,
-            created: card.dataset.created,
-            id: card.dataset.id
-        });
-    });
-    
-    // Restore saved preferences
-    const savedView = localStorage.getItem('dockdash-view');
-    const savedPageSize = localStorage.getItem('dockdash-pageSize');
-    const savedSort = localStorage.getItem('dockdash-sort');
-    
-    if (savedView === 'table') {
-        setView('table');
-    }
-    if (savedPageSize) {
-        pageSize = savedPageSize === 'all' ? 'all' : parseInt(savedPageSize);
-        document.getElementById('pageSizeSelect').value = savedPageSize;
-    }
-    if (savedSort) {
-        const [field, dir] = savedSort.split('-');
-        sortField = field;
-        sortDirection = dir;
-        document.getElementById('sortSelect').value = savedSort;
-    }
-    
-    // Initial render
-    filteredContainers = [...allContainers];
-    applySort();
-    renderContainers();
-
-    // Probe visible links to upgrade http -> https where appropriate
-    scheduleProbeVisibleLinks();
-    
-    // Setup search input
-    const searchInput = document.getElementById('searchInput');
-    searchInput.addEventListener('input', debounce(function() {
-        searchTerm = this.value.toLowerCase().trim();
-        document.getElementById('searchClear').style.display = searchTerm ? 'block' : 'none';
-        currentPage = 1;
-        filterContainers();
-        renderContainers();
-    }, 200));
-    
-    // Keyboard shortcut for search
-    document.addEventListener('keydown', function(e) {
-        if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
-            e.preventDefault();
-            searchInput.focus();
-        }
-        if (e.key === 'Escape' && document.activeElement === searchInput) {
-            clearSearch();
-            searchInput.blur();
-        }
-    });
-});
-
-// Debounce helper
-function debounce(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func.apply(this, args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-    };
-}
-
-// View toggle functionality
-function setView(view) {
-    currentView = view;
-    const cardView = document.getElementById('containerGrid');
-    const tableView = document.getElementById('containerTable');
-    const cardBtn = document.getElementById('cardViewBtn');
-    const tableBtn = document.getElementById('tableViewBtn');
-    
-    if (view === 'table') {
-        cardView.style.display = 'none';
-        tableView.style.display = 'block';
-        cardBtn.classList.remove('active');
-        tableBtn.classList.add('active');
-    } else {
-        cardView.style.display = 'grid';
-        tableView.style.display = 'none';
-        cardBtn.classList.add('active');
-        tableBtn.classList.remove('active');
-    }
-    localStorage.setItem('dockdash-view', view);
-    renderContainers();
-    scheduleProbeVisibleLinks();
-}
-
-// Search functionality
-function clearSearch() {
-    document.getElementById('searchInput').value = '';
-    document.getElementById('searchClear').style.display = 'none';
-    searchTerm = '';
-    currentPage = 1;
-    filterContainers();
-    renderContainers();
-}
-
-function filterContainers() {
-    if (!searchTerm) {
-        filteredContainers = [...allContainers];
-    } else {
-        filteredContainers = allContainers.filter(c => 
-            c.name.includes(searchTerm) || 
-            c.image.includes(searchTerm) ||
-            c.status.includes(searchTerm) ||
-            c.id.includes(searchTerm)
-        );
-    }
-    applySort();
-}
-
-// Sort functionality
-function sortContainers() {
-    const value = document.getElementById('sortSelect').value;
-    const [field, dir] = value.split('-');
-    sortField = field;
-    sortDirection = dir;
-    localStorage.setItem('dockdash-sort', value);
-    applySort();
-    renderContainers();
-}
-
-function sortByColumn(field) {
-    if (sortField === field) {
-        sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
-    } else {
-        sortField = field;
-        sortDirection = 'asc';
-    }
-    
-    // Update dropdown
-    const sortValue = `${field}-${sortDirection}`;
-    const select = document.getElementById('sortSelect');
-    const option = select.querySelector(`option[value="${sortValue}"]`);
-    if (option) {
-        select.value = sortValue;
-    }
-    
-    localStorage.setItem('dockdash-sort', sortValue);
-    applySort();
-    renderContainers();
-    updateSortIcons();
-}
-
-function applySort() {
-    filteredContainers.sort((a, b) => {
-        let valA, valB;
-        
-        if (sortField === 'status') {
-            // Custom sort: running first or last
-            const statusOrder = { 'running': 0, 'paused': 1, 'exited': 2, 'stopped': 2 };
-            valA = statusOrder[a.status] ?? 3;
-            valB = statusOrder[b.status] ?? 3;
-        } else if (sortField === 'created') {
-            valA = a.created;
-            valB = b.created;
-        } else {
-            valA = a[sortField] || '';
-            valB = b[sortField] || '';
-        }
-        
-        if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
-        if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
-        return 0;
-    });
-}
-
-function updateSortIcons() {
-    document.querySelectorAll('.sort-icon').forEach(icon => {
-        icon.textContent = '↕';
-        icon.classList.remove('active');
-    });
-    
-    const activeIcon = document.getElementById(`sort-${sortField}`);
-    if (activeIcon) {
-        activeIcon.textContent = sortDirection === 'asc' ? '↑' : '↓';
-        activeIcon.classList.add('active');
-    }
-}
-
-// Pagination functionality
-function changePageSize() {
-    const value = document.getElementById('pageSizeSelect').value;
-    pageSize = value === 'all' ? 'all' : parseInt(value);
-    localStorage.setItem('dockdash-pageSize', value);
-    currentPage = 1;
-    renderContainers();
-}
-
-function changePage(delta) {
-    const totalPages = getTotalPages();
-    currentPage = Math.max(1, Math.min(totalPages, currentPage + delta));
-    renderContainers();
-}
-
-function getTotalPages() {
-    if (pageSize === 'all') return 1;
-    return Math.ceil(filteredContainers.length / pageSize);
-}
-
-function getPagedContainers() {
-    if (pageSize === 'all') return filteredContainers;
-    const start = (currentPage - 1) * pageSize;
-    return filteredContainers.slice(start, start + pageSize);
-}
-
-// Render containers
-function renderContainers() {
-    const pagedContainers = getPagedContainers();
-    const totalPages = getTotalPages();
-    const total = filteredContainers.length;
-    
-    // Update pagination info
-    const start = total === 0 ? 0 : (currentPage - 1) * (pageSize === 'all' ? total : pageSize) + 1;
-    const end = pageSize === 'all' ? total : Math.min(currentPage * pageSize, total);
-    
-    document.getElementById('showingStart').textContent = start;
-    document.getElementById('showingEnd').textContent = end;
-    document.getElementById('totalFiltered').textContent = total;
-    document.getElementById('currentPage').textContent = currentPage;
-    document.getElementById('totalPages').textContent = totalPages;
-    document.getElementById('currentPageBottom').textContent = currentPage;
-    document.getElementById('totalPagesBottom').textContent = totalPages;
-    
-    // Update button states
-    const prevDisabled = currentPage <= 1;
-    const nextDisabled = currentPage >= totalPages;
-    document.getElementById('prevPage').disabled = prevDisabled;
-    document.getElementById('nextPage').disabled = nextDisabled;
-    document.getElementById('prevPageBottom').disabled = prevDisabled;
-    document.getElementById('nextPageBottom').disabled = nextDisabled;
-    
-    // Show/hide pagination if not needed
-    const paginationNeeded = totalPages > 1;
-    document.getElementById('paginationControls').style.visibility = paginationNeeded ? 'visible' : 'hidden';
-    document.getElementById('bottomPagination').style.display = paginationNeeded ? 'flex' : 'none';
-    
-    // Get set of visible container IDs
-    const visibleIds = new Set(pagedContainers.map(c => c.id));
-    
-    // Render card view
-    const cardGrid = document.getElementById('containerGrid');
-    const cards = cardGrid.querySelectorAll('.container-card[data-id]');
-    cards.forEach(card => {
-        card.style.display = visibleIds.has(card.dataset.id) ? '' : 'none';
-    });
-    
-    // Render table view
-    const tableBody = document.getElementById('tableBody');
-    if (tableBody) {
-        const rows = tableBody.querySelectorAll('tr[data-id]');
-        rows.forEach(row => {
-            row.style.display = visibleIds.has(row.dataset.id) ? '' : 'none';
-        });
-    }
-    
-    // Show/hide empty states
-    const hasResults = pagedContainers.length > 0;
-    const hasContainers = allContainers.length > 0;
-    
-    document.getElementById('emptyState').style.display = (!hasContainers && !searchTerm) ? 'flex' : 'none';
-    document.getElementById('noResultsState').style.display = (!hasResults && searchTerm) ? 'flex' : 'none';
-    
-    const tableNoResults = document.getElementById('tableNoResults');
-    if (tableNoResults) {
-        tableNoResults.style.display = (!hasResults && searchTerm) ? 'flex' : 'none';
-    }
-    
-    // Reorder DOM elements to match sort order
-    if (currentView === 'card') {
-        pagedContainers.forEach(c => {
-            const card = cardGrid.querySelector(`.container-card[data-id="${c.id}"]`);
-            if (card) cardGrid.appendChild(card);
-        });
-    } else if (tableBody) {
-        pagedContainers.forEach(c => {
-            const row = tableBody.querySelector(`tr[data-id="${c.id}"]`);
-            if (row) tableBody.appendChild(row);
-        });
-    }
-    
-    updateSortIcons();
-
-    // Probe visible links after pagination/filtering changes
-    scheduleProbeVisibleLinks();
-}
-
-// Existing functionality
-document.getElementById('showAllToggle').addEventListener('change', function() {
-    const showAll = this.checked;
-    window.location.href = '/dashboard?show_all=' + showAll;
-});
-
-function refreshContainers() {
-    location.reload();
-}
-
-// Link probing (HTTP vs HTTPS)
-let _probeQueueTimer = null;
-let _probeInFlight = 0;
-const _probeMaxConcurrency = 6;
-const _probeResults = new Map();
-const _probePromises = new Map();
-
-function scheduleProbeVisibleLinks() {
-    if (_probeQueueTimer) clearTimeout(_probeQueueTimer);
-    _probeQueueTimer = setTimeout(runProbeQueue, 150);
-}
-
-function runProbeQueue() {
-    const visibleLinks = Array.from(document.querySelectorAll('.probe-link'))
-        .filter(a => a.offsetParent !== null);
-
-    for (const a of visibleLinks) {
-        const host = a.dataset.host;
-        const port = a.dataset.port;
-        if (!host || !port) continue;
-        const key = `${host}:${port}`;
-
-        // If we already probed this host:port, apply to all matching anchors.
-        if (_probeResults.has(key)) {
-            applyProbeResultToAnchors(host, port, _probeResults.get(key));
-            continue;
-        }
-
-        // Avoid duplicating in-flight probes.
-        if (_probePromises.has(key)) continue;
-
-        _probePromises.set(key, enqueueProbe(host, port, key));
-    }
-}
-
-function applyProbeResultToAnchor(anchorEl, data) {
-    const schemeEl = anchorEl.querySelector('.link-scheme');
-    const portEl = anchorEl.querySelector('.link-port');
-
-    if (data.web && data.url) {
-        anchorEl.href = data.url;
-        anchorEl.classList.remove('is-nonweb');
-        anchorEl.classList.toggle('is-https', data.scheme === 'https');
-        if (schemeEl) schemeEl.textContent = data.scheme === 'https' ? 'https' : 'http';
-        if (portEl) portEl.textContent = `:${data.port}`;
-        anchorEl.setAttribute('target', '_blank');
-        anchorEl.setAttribute('rel', 'noopener noreferrer');
-        anchorEl.style.pointerEvents = '';
-        anchorEl.removeAttribute('aria-disabled');
-        anchorEl.removeAttribute('tabindex');
-        anchorEl.title = 'Open in new tab';
-    } else {
-        // Not an HTTP(S) service; show as a plain port chip
-        anchorEl.removeAttribute('href');
-        anchorEl.classList.add('is-nonweb');
-        anchorEl.classList.remove('is-https');
-        if (schemeEl) schemeEl.textContent = 'tcp';
-        if (portEl) portEl.textContent = `:${data.port}`;
-        anchorEl.style.pointerEvents = 'none';
-        anchorEl.setAttribute('aria-disabled', 'true');
-        anchorEl.setAttribute('tabindex', '-1');
-        anchorEl.title = 'Not an HTTP service';
-    }
-}
-
-function applyProbeResultToAnchors(host, port, data) {
-    const anchors = Array.from(document.querySelectorAll('.probe-link'))
-        .filter(a => a.dataset.host === host && a.dataset.port === port);
-    anchors.forEach(a => applyProbeResultToAnchor(a, data));
-}
-
-function enqueueProbe(host, port, key) {
-    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-    const attempt = async () => {
-        while (_probeInFlight >= _probeMaxConcurrency) {
-            await sleep(100);
-        }
-
-        _probeInFlight += 1;
-        try {
-            const resp = await fetch(`/api/link/probe?host=${encodeURIComponent(host)}&port=${encodeURIComponent(port)}`);
-            const data = await resp.json();
-            if (!data || !data.success) return;
-
-            _probeResults.set(key, data);
-            applyProbeResultToAnchors(host, port, data);
-        } catch (e) {
-            // Leave as default http
-        } finally {
-            _probeInFlight -= 1;
-            _probePromises.delete(key);
-        }
-    };
-
-    // Kick off and return the promise so callers can avoid duplicates.
-    const p = attempt();
-    return p;
-}
-
-// Logs viewer
-let _logsContainerId = null;
-let _logsContainerName = null;
-let _logsInterval = null;
-
-function openLogs(id, name) {
-    _logsContainerId = id;
-    _logsContainerName = name;
-    document.getElementById('logsTitle').textContent = `📜 Logs — ${name}`;
-    document.getElementById('logsOutput').textContent = 'Loading…';
-    document.getElementById('logsModal').style.display = 'flex';
-    refreshLogs();
-    startLogsFollow();
-}
-
-function closeLogs(e) {
-    if (e && e.target && e.target.id !== 'logsModal') return;
-    document.getElementById('logsModal').style.display = 'none';
-    stopLogsFollow();
-    _logsContainerId = null;
-    _logsContainerName = null;
-}
-
-function startLogsFollow() {
-    stopLogsFollow();
-    const follow = document.getElementById('logsFollow');
-    if (!follow || !follow.checked) return;
-    _logsInterval = setInterval(() => {
-        const modalVisible = document.getElementById('logsModal').style.display !== 'none';
-        if (!modalVisible) return;
-        refreshLogs(true);
-    }, 2000);
-}
-
-function stopLogsFollow() {
-    if (_logsInterval) {
-        clearInterval(_logsInterval);
-        _logsInterval = null;
-    }
-}
-
-document.addEventListener('change', function(e) {
-    if (e.target && e.target.id === 'logsFollow') {
-        startLogsFollow();
-    }
-});
-
-async function refreshLogs(silent = false) {
-    if (!_logsContainerId) return;
-    const tail = document.getElementById('logsTail')?.value || '200';
-    try {
-        const resp = await fetch(`/api/container/${_logsContainerId}/logs?tail=${encodeURIComponent(tail)}&timestamps=1`);
-        const data = await resp.json();
-        if (!data.success) {
-            document.getElementById('logsOutput').textContent = data.error || 'Failed to load logs';
-            return;
-        }
-        const out = document.getElementById('logsOutput');
-        const wasNearBottom = out.scrollTop + out.clientHeight >= out.scrollHeight - 40;
-        out.textContent = data.logs || '';
-        if (silent && !wasNearBottom) return;
-        out.scrollTop = out.scrollHeight;
-    } catch (err) {
-        if (!silent) {
-            document.getElementById('logsOutput').textContent = 'Failed to load logs';
-        }
-    }
-}
-
-async function copyLogs() {
-    const text = document.getElementById('logsOutput').textContent || '';
-    try {
-        await navigator.clipboard.writeText(text);
-        showToast('success', 'Logs copied to clipboard');
-    } catch (e) {
-        showToast('error', 'Failed to copy logs');
-    }
-}
-
-function getCsrfToken() {
-    const el = document.querySelector('meta[name="csrf-token"]');
-    return el ? el.getAttribute('content') : null;
-}
-
-function csrfHeaders() {
-    const token = getCsrfToken();
-    return token ? { 'X-CSRFToken': token } : {};
-}
-
-async function restartContainer(id, name) {
-    if (!confirm(`Are you sure you want to restart ${name}?`)) return;
-    
-    try {
-        const response = await fetch(`/api/container/${id}/restart`, { method: 'POST', headers: csrfHeaders() });
-        const data = await response.json();
-        
-        if (data.success) {
-            showToast('success', data.message);
-            await waitForContainerStatus(id, ['running'], 8000);
-            location.reload();
-        } else {
-            showToast('error', data.error);
-        }
-    } catch (error) {
-        showToast('error', 'Failed to restart container');
-    }
-}
-
-async function stopContainer(id, name) {
-    if (!confirm(`Are you sure you want to stop ${name}?`)) return;
-    
-    try {
-        const response = await fetch(`/api/container/${id}/stop`, { method: 'POST', headers: csrfHeaders() });
-        const data = await response.json();
-        
-        if (data.success) {
-            showToast('success', data.message);
-            await waitForContainerStatus(id, ['exited', 'stopped'], 8000);
-            location.reload();
-        } else {
-            showToast('error', data.error);
-        }
-    } catch (error) {
-        showToast('error', 'Failed to stop container');
-    }
-}
-
-async function startContainer(id, name) {
-    if (!confirm(`Are you sure you want to start ${name}?`)) return;
-    
-    try {
-        const response = await fetch(`/api/container/${id}/start`, { method: 'POST', headers: csrfHeaders() });
-        const data = await response.json();
-        
-        if (data.success) {
-            showToast('success', data.message);
-            await waitForContainerStatus(id, ['running'], 8000);
-            location.reload();
-        } else {
-            showToast('error', data.error);
-        }
-    } catch (error) {
-        showToast('error', 'Failed to start container');
-    }
-}
-
-async function waitForContainerStatus(id, expectedStatuses, maxMs) {
-    const start = Date.now();
-    const showAll = document.getElementById('showAllToggle')?.checked ? 'true' : 'false';
-    while ((Date.now() - start) < maxMs) {
-        try {
-            const resp = await fetch(`/api/containers?show_all=${showAll}`);
-            const containers = await resp.json();
-            const c = (containers || []).find(x => x.id === id);
-            if (!c) {
-                // If container is gone (e.g., stopped and show_all=false), treat as done.
-                if (!showAll) return true;
-            } else if (expectedStatuses.includes(c.status)) {
-                return true;
-            }
-        } catch (e) {
-            // ignore
-        }
-        await new Promise(r => setTimeout(r, 800));
-    }
-    return false;
-}
-</script>
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 {% endblock %}

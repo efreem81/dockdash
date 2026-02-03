@@ -7,7 +7,7 @@
     <div class="page-header">
         <h1>🔗 Shared URLs</h1>
         <div class="header-actions">
-            <a href="{{ url_for('add_url') }}" class="btn btn-primary">
+            <a href="{{ url_for('urls.add_url') }}" class="btn btn-primary">
                 ➕ Add URL
             </a>
         </div>
@@ -15,11 +15,11 @@
 
     {% if categories %}
     <div class="category-filter">
-        <a href="{{ url_for('url_list') }}" class="category-tag {% if not current_category %}active{% endif %}">
+        <a href="{{ url_for('urls.url_list') }}" class="category-tag {% if not current_category %}active{% endif %}">
             All
         </a>
         {% for category in categories %}
-        <a href="{{ url_for('url_list', category=category) }}" 
+        <a href="{{ url_for('urls.url_list', category=category) }}" 
            class="category-tag {% if current_category == category %}active{% endif %}">
             {{ category }}
         </a>
@@ -53,10 +53,10 @@
                     <a href="{{ url.url }}" target="_blank" class="btn btn-primary btn-sm">
                         🔗 Open
                     </a>
-                    <a href="{{ url_for('edit_url', url_id=url.id) }}" class="btn btn-secondary btn-sm">
+                    <a href="{{ url_for('urls.edit_url', url_id=url.id) }}" class="btn btn-secondary btn-sm">
                         ✏️ Edit
                     </a>
-                    <form action="{{ url_for('delete_url', url_id=url.id) }}" method="POST" style="display: inline;">
+                    <form action="{{ url_for('urls.delete_url', url_id=url.id) }}" method="POST" style="display: inline;">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this URL?')">
                             🗑️ Delete
@@ -70,7 +70,7 @@
                 <span class="empty-icon">🔗</span>
                 <h3>No shared URLs yet</h3>
                 <p>Add your first URL to start building your shared bookmark collection.</p>
-                <a href="{{ url_for('add_url') }}" class="btn btn-primary">
+                <a href="{{ url_for('urls.add_url') }}" class="btn btn-primary">
                     ➕ Add First URL
                 </a>
             </div>
