@@ -52,6 +52,8 @@ def recreate_container(container_id, pull_latest=True, skip_scan=False):
         
         # Stop and remove the old container
         was_running = container.status == 'running'
+        print(f"Recreating container {old_name}: was_running={was_running}")
+        
         if was_running:
             container.stop(timeout=30)
         container.remove()
@@ -63,9 +65,25 @@ def recreate_container(container_id, pull_latest=True, skip_scan=False):
         
         # Create and optionally start the new container
         new_container = client.containers.create(**create_kwargs)
+        print(f"Created new container {new_container.short_id} for {old_name}")
         
+        started = False
         if was_running:
-            new_container.start()
+            try:
+                new_container.start()
+                started = True
+                print(f"Started container {old_name} successfully")
+            except Exception as start_error:
+                print(f"Warning: Failed to start container {old_name}: {start_error}")
+                return {
+                    'success': True,
+                    'message': f'Container {old_name} recreated but failed to start: {start_error}',
+                    'container_id': new_container.short_id,
+                    'image': image_ref,
+                    'pulled_new_image': pulled_new,
+                    'started': False,
+                    'start_error': str(start_error)
+                }
         
         # Scan the image after recreation unless skip_scan=True (batch updates)
         scan_result = None
@@ -88,7 +106,7 @@ def recreate_container(container_id, pull_latest=True, skip_scan=False):
             'container_id': new_container.short_id,
             'image': image_ref,
             'pulled_new_image': pulled_new,
-            'started': was_running,
+            'started': started,
             'vulnerability_scan': scan_result.get('summary') if scan_result and scan_result.get('success') else None
         }
         

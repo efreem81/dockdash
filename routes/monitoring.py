@@ -2,7 +2,7 @@
 Monitoring API Routes
 Background monitoring and scheduler endpoints
 """
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from flask_login import login_required
 
 from services.scheduler_service import (
@@ -25,7 +25,7 @@ def api_monitoring_status():
 @login_required
 def api_start_monitoring():
     """Start background monitoring."""
-    result = start_monitoring()
+    result = start_monitoring(current_app._get_current_object())
     return jsonify(result)
 
 

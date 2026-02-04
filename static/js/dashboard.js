@@ -1732,7 +1732,7 @@ async function updateContainer(containerId, containerName) {
         return;
     }
     
-    showToast('info', `Updating ${containerName}...`);
+    showToast('info', `Updating ${containerName}... This may take a moment.`);
     
     try {
         const response = await fetch(`/api/container/${containerId}/recreate`, {
@@ -1747,9 +1747,23 @@ async function updateContainer(containerId, containerName) {
         const data = await response.json();
         
         if (data.success) {
-            showToast('success', data.message || `Container ${containerName} updated successfully`);
+            const newContainerId = data.container_id;
+            let msg = data.message || `Container ${containerName} updated successfully`;
+            if (data.pulled_new_image) {
+                msg += ' (new image pulled)';
+            }
+            if (data.started) {
+                msg += ' - Container is starting...';
+            }
+            showToast('success', msg);
+            
+            // Wait for container to be running if it was started
+            if (data.started && newContainerId) {
+                await waitForContainerRunning(containerName, 15000);
+            }
+            
             // Refresh the page to show new container
-            setTimeout(() => location.reload(), 1500);
+            setTimeout(() => location.reload(), 500);
         } else {
             showToast('error', data.error || 'Failed to update container');
         }
@@ -1759,15 +1773,43 @@ async function updateContainer(containerId, containerName) {
     }
 }
 
+async function waitForContainerRunning(containerName, maxMs) {
+    const start = Date.now();
+    while ((Date.now() - start) < maxMs) {
+        try {
+            const resp = await fetch(`/api/containers?show_all=true`);
+            const containers = await resp.json();
+            const container = (containers || []).find(c => c.name === containerName);
+            if (container && container.status === 'running') {
+                return true;
+            }
+        } catch (e) {
+            // ignore
+        }
+        await new Promise(r => setTimeout(r, 1000));
+    }
+    return false;
+}
+
 async function updateAllContainers() {
     // Count containers with updates
     const containersWithUpdates = [];
     document.querySelectorAll('.container-card[data-has-update="true"]').forEach(card => {
         containersWithUpdates.push({
             id: card.dataset.id,
-            name: card.querySelector('.container-name')?.textContent || card.dataset.id
+            name: card.querySelector('.container-name')?.textContent?.replace(/\s*ⓘ\s*$/, '').trim() || card.dataset.id
         });
     });
+    
+    // Also check table view
+    if (containersWithUpdates.length === 0) {
+        document.querySelectorAll('tr[data-has-update="true"]').forEach(row => {
+            containersWithUpdates.push({
+                id: row.dataset.id,
+                name: row.querySelector('.cell-name strong')?.textContent?.trim() || row.dataset.id
+            });
+        });
+    }
     
     if (containersWithUpdates.length === 0) {
         showToast('info', 'No containers with updates available');
@@ -1799,14 +1841,17 @@ async function updateAllContainers() {
         const data = await response.json();
         
         if (data.updated > 0) {
-            showToast('success', `Updated ${data.updated} container(s)`);
+            showToast('success', `Updated ${data.updated} container(s) - waiting for startup...`);
         }
         if (data.errors > 0) {
             showToast('warning', `${data.errors} container(s) failed to update`);
         }
         
+        // Wait a bit for containers to start before refreshing
+        await new Promise(r => setTimeout(r, 3000));
+        
         // Refresh the page to show updated containers
-        setTimeout(() => location.reload(), 2000);
+        location.reload();
         
     } catch (error) {
         console.error('Error updating containers:', error);

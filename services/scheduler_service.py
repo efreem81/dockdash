@@ -84,34 +84,61 @@ def get_scheduler() -> SimpleScheduler:
     return _scheduler
 
 
-def start_monitoring():
+def _run_with_app_context(app, job_func: Callable, **kwargs):
+    """Run a scheduler job inside a Flask application context.
+
+    Background threads don't automatically have Flask application context,
+    so any DB access (models.query, db.session) will fail without this.
+    """
+    if app is None:
+        job_func(**kwargs)
+        return
+
+    with app.app_context():
+        job_func(**kwargs)
+
+
+def start_monitoring(app=None):
     """Start the background monitoring service."""
     global _is_running
     
     if _is_running:
         return {'success': True, 'message': 'Monitoring already running'}
     
+    if app is None:
+        try:
+            from flask import current_app
+            app = current_app._get_current_object()
+        except Exception:
+            app = None
+
     scheduler = get_scheduler()
     
     # Add container stats monitoring job
     scheduler.add_job(
         'container_monitor',
-        check_container_resources,
-        interval_seconds=CHECK_INTERVAL
+        _run_with_app_context,
+        interval_seconds=CHECK_INTERVAL,
+        app=app,
+        job_func=check_container_resources
     )
     
     # Add container state monitoring job
     scheduler.add_job(
         'state_monitor',
-        check_container_states,
-        interval_seconds=30
+        _run_with_app_context,
+        interval_seconds=30,
+        app=app,
+        job_func=check_container_states
     )
     
     # Add scheduled scan check (checks every minute if it's time to run)
     scheduler.add_job(
         'scheduled_scans',
-        run_scheduled_tasks,
-        interval_seconds=60
+        _run_with_app_context,
+        interval_seconds=60,
+        app=app,
+        job_func=run_scheduled_tasks
     )
     
     scheduler.start()

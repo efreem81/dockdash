@@ -42,6 +42,11 @@
     box-sizing: border-box;
 }
 
+html {
+    width: 100%;
+    overflow-x: hidden;
+}
+
 body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
     background: var(--bg-gradient);
@@ -50,6 +55,8 @@ body {
     min-height: 100vh;
     display: flex;
     flex-direction: column;
+    width: 100%;
+    overflow-x: hidden;
 }
 
 a {
@@ -75,10 +82,13 @@ a:hover {
     box-shadow: var(--shadow-lg);
     position: sticky;
     top: 0;
+    left: 0;
+    right: 0;
     z-index: 1000;
     width: 100%;
     box-sizing: border-box;
     min-width: 100%;
+    flex-shrink: 0;
 }
 
 .nav-brand {
@@ -165,6 +175,8 @@ a:hover {
     margin: 0 auto;
     padding: 2rem;
     flex: 1;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .page-header {
@@ -1281,6 +1293,8 @@ a:hover {
         max-width: 100% !important;
         box-sizing: border-box !important;
         gap: 0.5rem;
+        left: 0 !important;
+        right: 0 !important;
     }
     
     .nav-brand {
@@ -1508,6 +1522,20 @@ a:hover {
     
     .modal-overlay {
         padding: 0;
+    }
+    
+    /* Prevent any horizontal overflow on mobile */
+    .dashboard,
+    .page-header,
+    .info-bar,
+    .filter-bar,
+    .controls-bar,
+    .container-grid-wrapper,
+    .container-grid,
+    .compose-group,
+    .standalone-group {
+        max-width: 100vw;
+        overflow-x: hidden;
     }
 }
 
@@ -1862,30 +1890,43 @@ a:hover {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.75rem 1rem;
+    padding: 1rem 1.5rem;
     background: linear-gradient(135deg, var(--secondary-color) 0%, var(--primary-dark) 100%);
     color: white;
 }
 
 .modal-title {
     font-weight: 700;
+    font-size: 1.1rem;
 }
 
 .modal-close {
     border: none;
-    background: transparent;
+    background: rgba(255, 255, 255, 0.1);
     color: white;
     font-size: 1.5rem;
     line-height: 1;
     cursor: pointer;
-    padding: 0.25rem 0.5rem;
+    padding: 0.35rem 0.6rem;
+    border-radius: var(--radius-sm);
+    transition: var(--transition);
+}
+
+.modal-close:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.modal-body {
+    padding: 1.5rem;
+    overflow-y: auto;
+    flex: 1;
 }
 
 .modal-toolbar {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.5rem 1rem;
+    gap: 1rem;
+    padding: 0.75rem 1.5rem;
     border-bottom: 1px solid var(--border-color);
     background: rgba(148, 163, 184, 0.08);
     flex-wrap: wrap;
@@ -1917,14 +1958,14 @@ a:hover {
 
 .logs-output {
     margin: 0;
-    padding: 1rem;
+    padding: 1.25rem;
     height: 100%;
     overflow: auto;
     background: #0b1220;
     color: #d1d5db;
     font-family: 'Monaco', 'Consolas', monospace;
-    font-size: 0.8rem;
-    line-height: 1.3;
+    font-size: 0.85rem;
+    line-height: 1.5;
     white-space: pre;
 }
 
@@ -2251,32 +2292,34 @@ a:hover {
 
 .exec-input {
     width: 100%;
-    padding: 0.75rem;
-    border: 1px solid var(--border-color);
+    padding: 0.875rem 1rem;
+    border: 2px solid var(--border-color);
     border-radius: var(--radius-md);
     font-family: 'JetBrains Mono', 'Monaco', 'Consolas', monospace;
-    font-size: 0.9rem;
-    margin-bottom: 0.75rem;
+    font-size: 0.95rem;
+    margin-bottom: 1rem;
+    transition: var(--transition);
 }
 
 .exec-input:focus {
     outline: none;
     border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
 }
 
 .exec-output {
     background: #1E1E1E;
     color: #D4D4D4;
-    padding: 1rem;
+    padding: 1.25rem;
     border-radius: var(--radius-md);
     max-height: 400px;
     overflow: auto;
     font-family: 'JetBrains Mono', 'Monaco', 'Consolas', monospace;
-    font-size: 0.85rem;
+    font-size: 0.9rem;
+    line-height: 1.5;
     white-space: pre-wrap;
     word-wrap: break-word;
-    margin-top: 1rem;
+    margin-top: 1.25rem;
 }
 
 .exec-output.exit-success {
@@ -2299,20 +2342,21 @@ a:hover {
 .inspect-tabs {
     display: flex;
     gap: 0.5rem;
-    margin-bottom: 1rem;
+    margin-bottom: 1.25rem;
     border-bottom: 2px solid var(--border-color);
-    padding-bottom: 0.5rem;
+    padding-bottom: 0.75rem;
 }
 
 .tab-btn {
-    padding: 0.5rem 1rem;
+    padding: 0.6rem 1.25rem;
     border: none;
     background: transparent;
     cursor: pointer;
-    font-weight: 500;
+    font-weight: 600;
     color: var(--text-muted);
     border-radius: var(--radius-sm);
     transition: var(--transition);
+    font-size: 0.9rem;
 }
 
 .tab-btn:hover {
@@ -2328,24 +2372,30 @@ a:hover {
 .inspect-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.85rem;
+    font-size: 0.9rem;
 }
 
 .inspect-table th,
 .inspect-table td {
-    padding: 0.5rem;
+    padding: 0.75rem 1rem;
     text-align: left;
     border-bottom: 1px solid var(--border-color);
 }
 
 .inspect-table th {
-    background: var(--border-color);
+    background: var(--bg-color);
     font-weight: 600;
+    color: var(--secondary-color);
 }
 
 .inspect-table td {
     font-family: 'JetBrains Mono', 'Monaco', 'Consolas', monospace;
     word-break: break-all;
+    font-size: 0.85rem;
+}
+
+.inspect-table tbody tr:hover {
+    background: rgba(59, 130, 246, 0.03);
 }
 
 .inspect-list {
@@ -2354,8 +2404,13 @@ a:hover {
 }
 
 .inspect-list li {
-    padding: 0.5rem;
+    padding: 0.75rem 1rem;
     border-bottom: 1px solid var(--border-color);
+    font-size: 0.9rem;
+}
+
+.inspect-list li:last-child {
+    border-bottom: none;
 }
 
 /* =============================================================================
@@ -3269,7 +3324,7 @@ a:hover {
     flex-wrap: wrap;
     align-items: center;
     gap: 1rem;
-    padding: 0.75rem 1rem;
+    padding: 1rem 1.25rem;
     background: var(--card-bg);
     border-radius: var(--radius-md);
     margin-bottom: 1rem;
@@ -3279,12 +3334,12 @@ a:hover {
 .filter-group {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.75rem;
     flex-wrap: wrap;
 }
 
 .filter-label {
-    font-size: 0.85rem;
+    font-size: 0.9rem;
     font-weight: 600;
     color: var(--text-muted);
 }
@@ -3300,9 +3355,9 @@ a:hover {
 }
 
 .filter-tag {
-    padding: 0.35rem 0.65rem;
-    border-radius: 20px;
-    font-size: 0.75rem;
+    padding: 0.5rem 0.9rem;
+    border-radius: 25px;
+    font-size: 0.8rem;
     font-weight: 600;
     border: 2px solid transparent;
     transition: var(--transition);
@@ -3400,28 +3455,29 @@ a:hover {
 
 /* Vulnerability Modal */
 .modal-xl {
-    max-width: 1000px;
+    max-width: 1100px;
     width: 95%;
 }
 
 .vuln-summary-bar {
     display: flex;
     gap: 1rem;
-    margin-bottom: 1rem;
-    padding: 0.75rem;
+    margin-bottom: 1.25rem;
+    padding: 1rem 1.25rem;
     background: var(--bg-color);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     flex-wrap: wrap;
+    align-items: center;
 }
 
 .vuln-summary-bar .vuln-stat {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.35rem 0.75rem;
-    border-radius: var(--radius-sm);
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius-md);
     font-weight: 600;
-    font-size: 0.85rem;
+    font-size: 0.9rem;
 }
 
 .vuln-stat.stat-critical { background: #FEE2E2; color: #DC2626; }
@@ -3431,33 +3487,33 @@ a:hover {
 
 .vuln-filters {
     display: flex;
-    gap: 0.5rem;
-    margin-bottom: 1rem;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
     flex-wrap: wrap;
     align-items: center;
 }
 
 .vuln-search {
-    padding: 0.4rem 0.75rem;
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    font-size: 0.85rem;
+    padding: 0.6rem 1rem;
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius-md);
+    font-size: 0.9rem;
     flex: 1;
     min-width: 150px;
     max-width: 250px;
 }
 
 .vuln-table-container {
-    max-height: 400px;
+    max-height: 450px;
     overflow-y: auto;
     border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
 }
 
 .vuln-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.85rem;
+    font-size: 0.9rem;
 }
 
 .vuln-table thead {
@@ -3470,13 +3526,13 @@ a:hover {
 
 .vuln-table th,
 .vuln-table td {
-    padding: 0.6rem 0.75rem;
+    padding: 0.75rem 1rem;
     text-align: left;
     border-bottom: 1px solid var(--border-color);
 }
 
 .vuln-table tbody tr:hover {
-    background: var(--bg-color);
+    background: rgba(59, 130, 246, 0.03);
 }
 
 .vuln-table .severity-cell {
@@ -3609,20 +3665,20 @@ a:hover {
 
 /* Container Detail Modal Layout */
 #containerDetailModal .modal {
-    max-width: 800px;
+    max-width: 850px;
     width: 95%;
     max-height: 90vh;
     height: auto;
 }
 
 .container-detail-content {
-    padding: 1.5rem;
+    padding: 1.75rem;
     overflow-y: auto;
-    max-height: calc(90vh - 60px);
+    max-height: calc(90vh - 70px);
 }
 
 .detail-section {
-    margin-bottom: 1.5rem;
+    margin-bottom: 2rem;
 }
 
 .detail-section:last-child {
@@ -3630,14 +3686,14 @@ a:hover {
 }
 
 .detail-section-title {
-    font-size: 0.9rem;
+    font-size: 1rem;
     font-weight: 700;
     color: var(--secondary-color);
-    margin-bottom: 0.75rem;
+    margin-bottom: 1rem;
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding-bottom: 0.5rem;
+    padding-bottom: 0.6rem;
     border-bottom: 2px solid var(--border-color);
 }
 
@@ -3645,16 +3701,16 @@ a:hover {
 .container-info-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1rem;
+    gap: 1.25rem;
     background: linear-gradient(135deg, #F8FAFC 0%, #F1F5F9 100%);
-    padding: 1rem;
+    padding: 1.25rem;
     border-radius: var(--radius-md);
 }
 
 .info-item {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 0.4rem;
 }
 
 .info-item-label {
@@ -3666,9 +3722,10 @@ a:hover {
 }
 
 .info-item-value {
-    font-size: 0.9rem;
+    font-size: 0.95rem;
     color: var(--text-color);
     word-break: break-all;
+    line-height: 1.4;
 }
 
 .info-item-value.mono {
@@ -3679,14 +3736,15 @@ a:hover {
 /* Container Actions Grid */
 .container-actions-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    gap: 0.75rem;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 0.875rem;
 }
 
 .container-actions-grid .btn {
     width: 100%;
     justify-content: center;
-    padding: 0.75rem 1rem;
+    padding: 0.875rem 1rem;
+    font-size: 0.9rem;
 }
 
 .action-btn-primary {
@@ -3707,21 +3765,21 @@ a:hover {
 .security-summary-card {
     background: linear-gradient(135deg, #F8FAFC 0%, #F1F5F9 100%);
     border-radius: var(--radius-md);
-    padding: 1rem;
+    padding: 1.25rem;
     display: flex;
     flex-wrap: wrap;
-    gap: 0.75rem;
+    gap: 1rem;
     align-items: center;
 }
 
 .security-stat {
     display: flex;
     align-items: center;
-    gap: 0.35rem;
-    padding: 0.35rem 0.75rem;
-    border-radius: 20px;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    border-radius: 25px;
     font-weight: 600;
-    font-size: 0.85rem;
+    font-size: 0.9rem;
 }
 
 .security-stat.critical {
@@ -3757,26 +3815,28 @@ a:hover {
 .links-list {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: 0.75rem;
 }
 
 .link-item {
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
-    padding: 0.5rem 0.75rem;
+    gap: 0.5rem;
+    padding: 0.7rem 1rem;
     background: linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     color: var(--primary-color);
-    font-weight: 500;
-    font-size: 0.85rem;
+    font-weight: 600;
+    font-size: 0.9rem;
     transition: var(--transition);
     text-decoration: none;
+    border: 1px solid rgba(59, 130, 246, 0.2);
 }
 
 .link-item:hover {
     background: linear-gradient(135deg, #DBEAFE 0%, #BFDBFE 100%);
-    transform: translateY(-1px);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-sm);
 }
 
 /* No data message */
@@ -3784,7 +3844,8 @@ a:hover {
     color: var(--text-muted);
     font-style: italic;
     text-align: center;
-    padding: 1rem;
+    padding: 1.5rem;
+    font-size: 0.95rem;
 }
 
 /* Mobile improvements for detail modal */

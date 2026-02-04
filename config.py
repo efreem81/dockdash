@@ -90,7 +90,7 @@ def create_app():
     if os.environ.get('AUTO_START_MONITORING', '0') == '1':
         try:
             from services.scheduler_service import start_monitoring
-            start_monitoring()
+            start_monitoring(app)
             print("Background monitoring started automatically")
         except Exception as e:
             print(f"Failed to start monitoring: {e}")
