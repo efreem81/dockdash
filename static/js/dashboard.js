@@ -1825,3 +1825,304 @@ document.addEventListener('DOMContentLoaded', function() {
     // Restore collapsed compose groups
     restoreCollapsedGroups();
 });
+
+// =============================================================================
+// Container Detail Modal
+// =============================================================================
+
+let currentDetailContainerId = null;
+let currentDetailContainerData = null;
+
+async function openContainerDetail(containerId, containerName, containerImage, containerStatus, hasUpdate) {
+    currentDetailContainerId = containerId;
+    
+    const modal = document.getElementById('containerDetailModal');
+    const title = document.getElementById('containerDetailTitle');
+    const content = document.getElementById('containerDetailContent');
+    
+    title.textContent = `📦 ${containerName}`;
+    content.innerHTML = '<div class="loading" style="padding: 2rem; text-align: center;">Loading container details...</div>';
+    modal.style.display = 'flex';
+    
+    try {
+        // Fetch full container details
+        const response = await fetch(`/api/container/${containerId}`);
+        const data = await response.json();
+        
+        if (!data.success) {
+            content.innerHTML = `<div class="no-data-msg" style="color: var(--danger-color);">Error: ${data.error || 'Failed to load container details'}</div>`;
+            return;
+        }
+        
+        currentDetailContainerData = data.container;
+        renderContainerDetailModal(containerName, containerImage, containerStatus, hasUpdate === 'true', data.container);
+        
+    } catch (error) {
+        console.error('Error loading container details:', error);
+        content.innerHTML = '<div class="no-data-msg" style="color: var(--danger-color);">Failed to load container details</div>';
+    }
+}
+
+function renderContainerDetailModal(name, image, status, hasUpdate, containerData) {
+    const content = document.getElementById('containerDetailContent');
+    const isRunning = status === 'running';
+    
+    // Build vulnerability summary
+    let vulnHtml = '';
+    const card = document.querySelector(`.container-card[data-id="${currentDetailContainerId}"]`);
+    const row = document.querySelector(`tr[data-id="${currentDetailContainerId}"]`);
+    const element = card || row;
+    
+    if (element) {
+        const vulnCritical = parseInt(element.dataset.vulnCritical) || 0;
+        const vulnHigh = parseInt(element.dataset.vulnHigh) || 0;
+        const vulnMedium = parseInt(element.dataset.vulnMedium) || 0;
+        const vulnLow = parseInt(element.dataset.vulnLow) || 0;
+        const vulnTotal = parseInt(element.dataset.vulnTotal) || 0;
+        
+        if (vulnTotal > 0) {
+            vulnHtml = `
+                <div class="security-summary-card">
+                    ${vulnCritical > 0 ? `<span class="security-stat critical">🔴 ${vulnCritical} Critical</span>` : ''}
+                    ${vulnHigh > 0 ? `<span class="security-stat high">🟠 ${vulnHigh} High</span>` : ''}
+                    ${vulnMedium > 0 ? `<span class="security-stat medium">🟡 ${vulnMedium} Medium</span>` : ''}
+                    ${vulnLow > 0 ? `<span class="security-stat low">🟢 ${vulnLow} Low</span>` : ''}
+                    <button class="btn btn-secondary btn-sm security-action-btn" onclick="closeContainerDetail(); showVulnerabilities('${escapeHtml(image)}', '${escapeHtml(name)}');">
+                        🔍 View Details
+                    </button>
+                </div>
+            `;
+        } else if (element.dataset.vulnTotal !== undefined) {
+            vulnHtml = `
+                <div class="security-summary-card">
+                    <span class="security-stat clean">✓ No vulnerabilities found</span>
+                    <button class="btn btn-secondary btn-sm security-action-btn" onclick="scanContainerFromDetail('${currentDetailContainerId}', '${escapeHtml(name)}');">
+                        🔄 Rescan
+                    </button>
+                </div>
+            `;
+        } else {
+            vulnHtml = `
+                <div class="security-summary-card">
+                    <span class="no-data-msg" style="padding: 0;">Not yet scanned</span>
+                    <button class="btn btn-info btn-sm security-action-btn" onclick="scanContainerFromDetail('${currentDetailContainerId}', '${escapeHtml(name)}');">
+                        🛡️ Scan Now
+                    </button>
+                </div>
+            `;
+        }
+    }
+    
+    // Build links section
+    let linksHtml = '<p class="no-data-msg">No exposed ports</p>';
+    const ports = containerData.ports || [];
+    if (ports.length > 0) {
+        linksHtml = '<div class="links-list">';
+        for (const port of ports) {
+            const url = `http://${window.location.hostname}:${port.host_port}`;
+            linksHtml += `<a href="${url}" target="_blank" class="link-item" rel="noopener noreferrer">🔗 :${port.host_port} → :${port.container_port}</a>`;
+        }
+        linksHtml += '</div>';
+    }
+    
+    // Build mounts info
+    let mountsHtml = '';
+    const mounts = containerData.mounts || [];
+    if (mounts.length > 0) {
+        mountsHtml = mounts.slice(0, 5).map(m => `${m.source || 'volume'} → ${m.destination}`).join('<br>');
+        if (mounts.length > 5) {
+            mountsHtml += `<br><span class="text-muted">... and ${mounts.length - 5} more</span>`;
+        }
+    } else {
+        mountsHtml = '<span class="text-muted">None</span>';
+    }
+    
+    // Build networks info
+    let networksHtml = '';
+    const networks = containerData.networks || [];
+    if (networks.length > 0) {
+        networksHtml = networks.join(', ');
+    } else {
+        networksHtml = '<span class="text-muted">None</span>';
+    }
+    
+    content.innerHTML = `
+        <!-- Container Info -->
+        <div class="detail-section">
+            <div class="detail-section-title">📋 Container Information</div>
+            <div class="container-info-grid">
+                <div class="info-item">
+                    <span class="info-item-label">Status</span>
+                    <span class="info-item-value">
+                        <span class="status-badge status-${status}">${status}</span>
+                        ${hasUpdate ? '<span class="update-badge" style="margin-left: 0.5rem;">⬆️ Update Available</span>' : ''}
+                    </span>
+                </div>
+                <div class="info-item">
+                    <span class="info-item-label">Image</span>
+                    <span class="info-item-value mono">${escapeHtml(image)}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-item-label">Container ID</span>
+                    <span class="info-item-value mono">${currentDetailContainerId.substring(0, 12)}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-item-label">Networks</span>
+                    <span class="info-item-value">${networksHtml}</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Quick Actions -->
+        <div class="detail-section">
+            <div class="detail-section-title">⚡ Quick Actions</div>
+            <div class="container-actions-grid">
+                ${isRunning ? `
+                    <button class="btn btn-warning" onclick="closeContainerDetail(); restartContainer('${currentDetailContainerId}', '${escapeHtml(name)}');">
+                        🔄 Restart
+                    </button>
+                    <button class="btn btn-danger" onclick="closeContainerDetail(); stopContainer('${currentDetailContainerId}', '${escapeHtml(name)}');">
+                        ⏹️ Stop
+                    </button>
+                ` : `
+                    <button class="btn btn-success" onclick="closeContainerDetail(); startContainer('${currentDetailContainerId}', '${escapeHtml(name)}');">
+                        ▶️ Start
+                    </button>
+                    <button class="btn btn-danger" onclick="closeContainerDetail(); removeContainer('${currentDetailContainerId}', '${escapeHtml(name)}');">
+                        🗑️ Delete
+                    </button>
+                `}
+                <button class="btn btn-info" onclick="closeContainerDetail(); recreateContainer('${currentDetailContainerId}', '${escapeHtml(name)}');">
+                    🔃 Recreate
+                </button>
+                ${hasUpdate ? `
+                    <button class="btn btn-success action-btn-primary" onclick="closeContainerDetail(); updateContainer('${currentDetailContainerId}', '${escapeHtml(name)}');">
+                        ⬆️ Update to Latest
+                    </button>
+                ` : `
+                    <button class="btn btn-secondary" onclick="checkSingleContainerUpdate('${currentDetailContainerId}', '${escapeHtml(image)}');">
+                        🔍 Check for Updates
+                    </button>
+                `}
+            </div>
+        </div>
+        
+        <!-- More Actions -->
+        <div class="detail-section">
+            <div class="detail-section-title">🔧 Tools</div>
+            <div class="container-actions-grid">
+                <button class="btn btn-secondary" onclick="closeContainerDetail(); openLogs('${currentDetailContainerId}', '${escapeHtml(name)}');">
+                    📜 View Logs
+                </button>
+                <button class="btn btn-secondary" onclick="closeContainerDetail(); openInspect('${currentDetailContainerId}', '${escapeHtml(name)}');">
+                    🔍 Inspect
+                </button>
+                ${isRunning ? `
+                    <button class="btn btn-secondary" onclick="closeContainerDetail(); openExec('${currentDetailContainerId}', '${escapeHtml(name)}');">
+                        💻 Execute Command
+                    </button>
+                    <button class="btn btn-secondary" onclick="closeContainerDetail(); toggleStats('${currentDetailContainerId}');">
+                        📊 Live Stats
+                    </button>
+                ` : ''}
+            </div>
+        </div>
+        
+        <!-- Security -->
+        <div class="detail-section">
+            <div class="detail-section-title">🛡️ Security</div>
+            ${vulnHtml}
+        </div>
+        
+        <!-- Links -->
+        <div class="detail-section">
+            <div class="detail-section-title">🔗 Exposed Ports</div>
+            ${linksHtml}
+        </div>
+        
+        <!-- Mounts Preview -->
+        <div class="detail-section">
+            <div class="detail-section-title">💾 Mounts</div>
+            <div class="container-info-grid" style="grid-template-columns: 1fr;">
+                <div class="info-item">
+                    <span class="info-item-value mono" style="font-size: 0.8rem; line-height: 1.6;">${mountsHtml}</span>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function closeContainerDetail(e) {
+    if (e && e.target && e.target.id !== 'containerDetailModal') return;
+    document.getElementById('containerDetailModal').style.display = 'none';
+    currentDetailContainerId = null;
+    currentDetailContainerData = null;
+}
+
+async function scanContainerFromDetail(containerId, containerName) {
+    const content = document.getElementById('containerDetailContent');
+    const securitySection = content.querySelector('.detail-section:nth-child(4) .security-summary-card');
+    if (securitySection) {
+        securitySection.innerHTML = '<div class="loading">Scanning for vulnerabilities...</div>';
+    }
+    
+    try {
+        // Get the image from the card/row
+        const card = document.querySelector(`.container-card[data-id="${containerId}"]`);
+        const row = document.querySelector(`tr[data-id="${containerId}"]`);
+        const element = card || row;
+        const image = element?.dataset?.imageFull || element?.dataset?.image;
+        
+        if (!image) {
+            showToast('error', 'Could not determine container image');
+            return;
+        }
+        
+        const response = await fetch('/api/vulnerabilities/scan', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
+            body: JSON.stringify({ image: image })
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            showToast('success', `Scan complete for ${containerName}`);
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showToast('error', data.error || 'Scan failed');
+            if (securitySection) {
+                securitySection.innerHTML = '<span class="no-data-msg" style="color: var(--danger-color);">Scan failed</span>';
+            }
+        }
+    } catch (error) {
+        console.error('Error scanning container:', error);
+        showToast('error', 'Failed to scan container');
+    }
+}
+
+async function checkSingleContainerUpdate(containerId, image) {
+    showToast('info', 'Checking for updates...');
+    
+    try {
+        const response = await fetch('/api/images/check-update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
+            body: JSON.stringify({ image: image })
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            if (data.update_available) {
+                showToast('success', 'Update available! Refreshing...');
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                showToast('info', 'Container is already up to date');
+            }
+        } else {
+            showToast('error', data.error || 'Failed to check for updates');
+        }
+    } catch (error) {
+        console.error('Error checking for updates:', error);
+        showToast('error', 'Failed to check for updates');
+    }
+}

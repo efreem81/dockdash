@@ -204,11 +204,13 @@
                 <input type="checkbox" class="container-checkbox" data-id="{{ container.id }}" data-name="{{ container.name }}" data-status="{{ container.status }}" onchange="updateBulkSelection()">
             </label>
             <div class="container-header">
-                <h3 class="container-name">{{ container.name }}</h3>
+                <h3 class="container-name container-name-clickable" 
+                    onclick="openContainerDetail('{{ container.id }}', '{{ container.name }}', '{{ container.image }}', '{{ container.status }}', '{{ container.has_update|lower }}')"
+                    title="Click for full details and actions">{{ container.name }}</h3>
                 <div class="header-badges">
                     {% if container.vulnerabilities and container.vulnerabilities.total > 0 %}
                     <button class="vuln-badge-btn {% if container.vulnerabilities.critical > 0 %}vuln-critical{% elif container.vulnerabilities.high > 0 %}vuln-high{% elif container.vulnerabilities.medium > 0 %}vuln-medium{% else %}vuln-low{% endif %}" 
-                          onclick="showVulnerabilities('{{ container.image }}', '{{ container.name }}')"
+                          onclick="event.stopPropagation(); showVulnerabilities('{{ container.image }}', '{{ container.name }}')"
                           title="Click for vulnerability details">
                         🛡️ {{ container.vulnerabilities.critical }}C/{{ container.vulnerabilities.high }}H/{{ container.vulnerabilities.medium }}M/{{ container.vulnerabilities.low }}L
                     </button>
@@ -442,7 +444,7 @@
                     <td class="checkbox-col">
                         <input type="checkbox" class="container-checkbox" data-id="{{ container.id }}" data-name="{{ container.name }}" data-status="{{ container.status }}" onchange="updateBulkSelection()">
                     </td>
-                    <td class="cell-name">
+                    <td class="cell-name cell-name-clickable" onclick="openContainerDetail('{{ container.id }}', '{{ container.name }}', '{{ container.image }}', '{{ container.status }}', '{{ container.has_update|lower }}')" title="Click for full details">
                         <strong>{{ container.name }}</strong>
                     </td>
                     <td>
@@ -662,6 +664,19 @@
                         No vulnerabilities match your filters.
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Container Detail Modal -->
+    <div class="modal-overlay" id="containerDetailModal" style="display: none;" onclick="closeContainerDetail(event)">
+        <div class="modal" role="dialog" aria-modal="true" aria-label="Container details" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <div class="modal-title" id="containerDetailTitle">📦 Container Details</div>
+                <button class="modal-close" onclick="closeContainerDetail()" aria-label="Close">×</button>
+            </div>
+            <div class="container-detail-content" id="containerDetailContent">
+                <!-- Content loaded dynamically -->
             </div>
         </div>
     </div>
