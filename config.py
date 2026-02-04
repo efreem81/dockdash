@@ -4,6 +4,7 @@ Centralized configuration and Flask app factory
 """
 import os
 import secrets
+import time
 from datetime import timedelta
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
@@ -22,6 +23,13 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 def create_app():
     """Application factory for Flask app."""
     app = Flask(__name__)
+
+    # Basic logging (may be refined after DB init)
+    try:
+        from services.logging_service import configure_app_logging
+        configure_app_logging(app)
+    except Exception:
+        pass
     
     # Secret key
     _secret_key = os.environ.get('SECRET_KEY')
@@ -61,6 +69,7 @@ def create_app():
     from routes.notifications import notifications_bp
     from routes.vulnerabilities import vulnerabilities_bp
     from routes.monitoring import monitoring_bp
+    from routes.logging import logging_bp
     
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp)
@@ -70,6 +79,7 @@ def create_app():
     app.register_blueprint(notifications_bp, url_prefix='/api')
     app.register_blueprint(vulnerabilities_bp, url_prefix='/api')
     app.register_blueprint(monitoring_bp, url_prefix='/api')
+    app.register_blueprint(logging_bp, url_prefix='/api')
     
     # Error handlers
     from flask_wtf.csrf import CSRFError
@@ -85,6 +95,57 @@ def create_app():
     # Initialize database
     with app.app_context():
         _init_db(app)
+
+        # Apply DB-configured log level once DB is ready
+        try:
+            from services.logging_service import configure_app_logging
+            configure_app_logging(app)
+        except Exception:
+            pass
+
+    # Request/response debug logging (API-focused, redacts sensitive inputs)
+    import logging
+    from flask import request, g
+
+    req_logger = logging.getLogger('dockdash.http')
+
+    @app.before_request
+    def _log_request_start():
+        if not (request.path.startswith('/api/') or request.endpoint):
+            return
+        g._dockdash_start_time = time.time()
+
+        # Don't log sensitive form bodies.
+        sensitive = any(x in (request.path or '') for x in ('login', 'password'))
+        json_keys = None
+        if request.is_json and not sensitive:
+            try:
+                payload = request.get_json(silent=True) or {}
+                if isinstance(payload, dict):
+                    json_keys = sorted(payload.keys())
+                else:
+                    json_keys = ['<non-dict-json>']
+            except Exception:
+                json_keys = ['<unreadable-json>']
+
+        req_logger.debug(
+            'REQ %s %s args=%s json_keys=%s',
+            request.method,
+            request.path,
+            dict(request.args) if request.args else {},
+            json_keys,
+        )
+
+    @app.after_request
+    def _log_request_end(response):
+        try:
+            start = getattr(g, '_dockdash_start_time', None)
+            if start is not None and (request.path.startswith('/api/') or request.endpoint):
+                ms = int((time.time() - start) * 1000)
+                req_logger.debug('RES %s %s status=%s ms=%s', request.method, request.path, response.status_code, ms)
+        except Exception:
+            pass
+        return response
     
     # Auto-start monitoring if enabled
     if os.environ.get('AUTO_START_MONITORING', '0') == '1':

@@ -5,6 +5,7 @@ Uses APScheduler to poll container stats and trigger alerts
 import os
 import time
 import threading
+import logging
 from datetime import datetime
 from typing import Dict, List, Optional, Callable
 
@@ -13,6 +14,8 @@ _scheduler = None
 _is_running = False
 _jobs: Dict[str, dict] = {}
 _last_check: Dict[str, dict] = {}
+
+logger = logging.getLogger(__name__)
 
 # Thresholds (can be overridden via environment)
 CPU_THRESHOLD = float(os.environ.get('ALERT_CPU_THRESHOLD', 80))
@@ -64,10 +67,11 @@ class SimpleScheduler:
             for job_id, job in list(self.jobs.items()):
                 if (now - job['last_run']) >= job['interval']:
                     try:
+                        logger.debug('Scheduler running job=%s', job_id)
                         job['func'](**job['kwargs'])
                         job['last_run'] = now
                     except Exception as e:
-                        print(f"Scheduler job {job_id} failed: {e}")
+                        logger.exception('Scheduler job %s failed: %s', job_id, e)
             
             # Sleep in small increments to allow quick shutdown
             for _ in range(10):
@@ -104,6 +108,8 @@ def start_monitoring(app=None):
     
     if _is_running:
         return {'success': True, 'message': 'Monitoring already running'}
+
+    logger.info('Starting background monitoring')
     
     if app is None:
         try:
@@ -153,13 +159,13 @@ def run_scheduled_tasks():
         from services.vulnerability_service import run_scheduled_scan_if_due
         run_scheduled_scan_if_due()
     except Exception as e:
-        print(f"Scheduled scan check failed: {e}")
+        logger.exception('Scheduled scan check failed: %s', e)
     
     try:
         from services.update_service import run_scheduled_check_if_due
         run_scheduled_check_if_due()
     except Exception as e:
-        print(f"Scheduled update check failed: {e}")
+        logger.exception('Scheduled update check failed: %s', e)
 
 
 def stop_monitoring():
@@ -171,6 +177,7 @@ def stop_monitoring():
         _scheduler = None
     
     _is_running = False
+    logger.info('Stopped background monitoring')
     return {'success': True, 'message': 'Monitoring stopped'}
 
 
@@ -241,10 +248,10 @@ def check_container_resources():
                 }
                 
             except Exception as e:
-                print(f"Error checking container {container.name}: {e}")
+                logger.exception('Error checking container %s: %s', container.name, e)
                 
     except Exception as e:
-        print(f"Error in resource monitoring: {e}")
+        logger.exception('Error in resource monitoring: %s', e)
 
 
 def check_container_states():
@@ -304,7 +311,7 @@ def check_container_states():
         _last_check['_states_checked_at'] = datetime.now().isoformat()
         
     except Exception as e:
-        print(f"Error in state monitoring: {e}")
+        logger.exception('Error in state monitoring: %s', e)
 
 
 # Alert suppression to avoid spam

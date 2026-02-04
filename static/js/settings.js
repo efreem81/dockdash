@@ -486,6 +486,47 @@ async function saveScanSettings() {
     }
 }
 
+
+// =============================================================================
+// Application Logging Settings
+// =============================================================================
+
+async function loadAppLogSettings() {
+    const sel = document.getElementById('appLogLevel');
+    if (!sel) return;
+
+    try {
+        const response = await fetch('/api/logging/settings');
+        const data = await response.json();
+        if (data.success && data.settings && data.settings.log_level) {
+            sel.value = data.settings.log_level;
+        }
+    } catch (error) {
+        // Non-fatal; keep default UI state.
+    }
+}
+
+async function saveAppLogSettings() {
+    const level = document.getElementById('appLogLevel')?.value || 'INFO';
+
+    try {
+        const response = await fetch('/api/logging/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
+            body: JSON.stringify({ log_level: level })
+        });
+        const result = await response.json();
+
+        if (result.success) {
+            showToast('success', `App log level set to ${result.settings?.log_level || level}`);
+        } else {
+            showToast('error', result.error || 'Failed to save app log level');
+        }
+    } catch (error) {
+        showToast('error', 'Failed to save app log level');
+    }
+}
+
 async function runFullScan() {
     const btn = document.getElementById('fullScanBtn');
     const progressDiv = document.getElementById('scanProgress');
@@ -758,4 +799,5 @@ document.addEventListener('DOMContentLoaded', function() {
     loadMonitoringStatus();
     loadScannerStatus();
     loadUpdateCheckStatus();
+    loadAppLogSettings();
 });

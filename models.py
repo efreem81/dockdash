@@ -170,6 +170,22 @@ class UpdateSettings(db.Model):
         return settings
 
 
+class AppSettings(db.Model):
+    """Application-level settings (singleton)."""
+    id = db.Column(db.Integer, primary_key=True)
+    log_level = db.Column(db.String(10), default='INFO')  # DEBUG, INFO, WARNING, ERROR
+
+    @staticmethod
+    def get_settings():
+        """Get or create the singleton settings."""
+        settings = AppSettings.query.first()
+        if not settings:
+            settings = AppSettings()
+            db.session.add(settings)
+            db.session.commit()
+        return settings
+
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))

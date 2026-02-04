@@ -1624,12 +1624,24 @@ a:hover {
     white-space: nowrap;
 }
 
-/* Column widths for compact layout */
-.container-table th:nth-child(1) { width: 20%; } /* Container */
-.container-table th:nth-child(2) { width: 9%; } /* Status */
-.container-table th:nth-child(3) { width: 26%; } /* Image */
-.container-table th:nth-child(4) { width: 15%; min-width: 110px; } /* Actions */
-.container-table th:nth-child(5) { width: 30%; } /* Links */
+/* Column widths for compact layout (Table View)
+   Columns: [1]=checkbox, [2]=container, [3]=status, [4]=image, [5]=security, [6]=actions, [7]=links */
+.container-table th.checkbox-col,
+.container-table td.checkbox-col {
+    width: 44px;
+    min-width: 44px;
+    max-width: 44px;
+    padding-left: 0.35rem;
+    padding-right: 0.35rem;
+    text-align: center;
+}
+
+.container-table th:nth-child(2) { width: 22%; } /* Container */
+.container-table th:nth-child(3) { width: 9%; } /* Status */
+.container-table th:nth-child(4) { width: 26%; } /* Image */
+.container-table th:nth-child(5) { width: 10%; } /* Security */
+.container-table th:nth-child(6) { width: 14%; min-width: 110px; } /* Actions */
+.container-table th:nth-child(7) { width: 19%; } /* Links */
 
 .container-table tbody tr {
     border-bottom: 1px solid var(--border-color);
@@ -1833,6 +1845,12 @@ a:hover {
     .container-table th,
     .container-table td {
         padding: 0.75rem 0.5rem;
+    }
+
+    .container-table th.checkbox-col,
+    .container-table td.checkbox-col {
+        padding-left: 0.35rem;
+        padding-right: 0.35rem;
     }
     
     .container-table .cell-image {

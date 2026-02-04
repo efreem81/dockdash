@@ -213,11 +213,26 @@
                         </select>
                         <span class="form-hint">View logs with: docker logs &lt;container&gt;</span>
                     </div>
+                    <div class="form-group">
+                        <label for="appLogLevel">Application log level</label>
+                        <select id="appLogLevel">
+                            <option value="ERROR">Error only</option>
+                            <option value="WARNING">Warning</option>
+                            <option value="INFO" selected>Info (default)</option>
+                            <option value="DEBUG">Debug (verbose)</option>
+                        </select>
+                        <span class="form-hint">Affects API/service logs (may be noisy on DEBUG).</span>
+                    </div>
                 </div>
 
-                <button class="btn btn-secondary" onclick="saveScanSettings()">
-                    💾 Save Schedule
-                </button>
+                <div class="modal-actions" style="justify-content: flex-start; gap: 0.5rem; padding: 0; margin-top: 0.75rem;">
+                    <button class="btn btn-secondary" onclick="saveScanSettings()">
+                        💾 Save Scan Settings
+                    </button>
+                    <button class="btn btn-secondary" onclick="saveAppLogSettings()">
+                        💾 Save App Logging
+                    </button>
+                </div>
             </div>
         </div>
     </div>
