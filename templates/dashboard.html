@@ -141,7 +141,8 @@
     <div class="controls-bar">
         <div class="search-box">
             <span class="search-icon">🔍</span>
-            <input type="text" id="searchInput" placeholder="Search containers..." autocomplete="off">
+            <input type="text" id="searchInput" placeholder="Search containers... (press /)" autocomplete="off">
+            <kbd class="search-shortcut">/</kbd>
             <button class="search-clear" id="searchClear" onclick="clearSearch()" aria-label="Clear search" style="display: none;">×</button>
         </div>
 
@@ -301,39 +302,50 @@
             {% endif %}
 
             <div class="container-actions">
-                {% if container.status == 'running' %}
-                <button class="btn btn-warning btn-sm" onclick="restartContainer('{{ container.id }}', '{{ container.name }}')" title="Restart">
-                    🔄
-                </button>
-                <button class="btn btn-danger btn-sm" onclick="stopContainer('{{ container.id }}', '{{ container.name }}')" title="Stop">
-                    ⏹️
-                </button>
-                <button class="btn btn-info btn-sm" onclick="toggleStats('{{ container.id }}')" title="Stats">
-                    📊
-                </button>
-                <button class="btn btn-secondary btn-sm" onclick="openExec('{{ container.id }}', '{{ container.name }}')" title="Execute Command">
-                    💻
-                </button>
-                {% else %}
-                <button class="btn btn-success btn-sm" onclick="startContainer('{{ container.id }}', '{{ container.name }}')" title="Start">
-                    ▶️
-                </button>
-                <button class="btn btn-danger btn-sm" onclick="removeContainer('{{ container.id }}', '{{ container.name }}')" title="Remove">
-                    🗑️
-                </button>
-                {% endif %}
-                <button class="btn btn-secondary btn-sm" onclick="openLogs('{{ container.id }}', '{{ container.name }}')" title="Logs">
-                    📜
-                </button>
-                <button class="btn btn-secondary btn-sm" onclick="openInspect('{{ container.id }}', '{{ container.name }}')" title="Inspect">
-                    🔍
-                </button>
-                <button class="btn btn-info btn-sm" onclick="recreateContainer('{{ container.id }}', '{{ container.name }}')" title="Recreate (pull latest & restart)">
-                    🔃
-                </button>
-                <button class="btn btn-success btn-sm update-container-btn" onclick="updateContainer('{{ container.id }}', '{{ container.name }}')" title="Update to latest image" style="display: {{ 'inline-flex' if container.has_update else 'none' }};">
-                    ⬆️ Update
-                </button>
+                <!-- Primary lifecycle actions -->
+                <div class="btn-group">
+                    {% if container.status == 'running' %}
+                    <button class="btn btn-warning btn-xs" onclick="restartContainer('{{ container.id }}', '{{ container.name }}')" title="Restart container">
+                        🔄 <span class="action-label">Restart</span>
+                    </button>
+                    <button class="btn btn-danger btn-xs" onclick="stopContainer('{{ container.id }}', '{{ container.name }}')" title="Stop container">
+                        ⏹️ <span class="action-label">Stop</span>
+                    </button>
+                    {% else %}
+                    <button class="btn btn-success btn-xs" onclick="startContainer('{{ container.id }}', '{{ container.name }}')" title="Start container">
+                        ▶️ <span class="action-label">Start</span>
+                    </button>
+                    <button class="btn btn-danger btn-xs" onclick="removeContainer('{{ container.id }}', '{{ container.name }}')" title="Remove container">
+                        🗑️ <span class="action-label">Remove</span>
+                    </button>
+                    {% endif %}
+                </div>
+                <!-- Info/debug actions -->
+                <div class="btn-group">
+                    {% if container.status == 'running' %}
+                    <button class="btn btn-info btn-xs" onclick="toggleStats('{{ container.id }}')" title="View live stats">
+                        📊
+                    </button>
+                    <button class="btn btn-secondary btn-xs" onclick="openExec('{{ container.id }}', '{{ container.name }}')" title="Execute command">
+                        💻
+                    </button>
+                    {% endif %}
+                    <button class="btn btn-secondary btn-xs" onclick="openLogs('{{ container.id }}', '{{ container.name }}')" title="View logs">
+                        📜
+                    </button>
+                    <button class="btn btn-secondary btn-xs" onclick="openInspect('{{ container.id }}', '{{ container.name }}')" title="Inspect details">
+                        🔍
+                    </button>
+                </div>
+                <!-- Update actions -->
+                <div class="btn-group">
+                    <button class="btn btn-info btn-xs" onclick="recreateContainer('{{ container.id }}', '{{ container.name }}')" title="Recreate with latest image">
+                        🔃 <span class="action-label">Recreate</span>
+                    </button>
+                    <button class="btn btn-success btn-xs update-container-btn" onclick="updateContainer('{{ container.id }}', '{{ container.name }}')" title="Update available - click to update" style="display: {{ 'inline-flex' if container.has_update else 'none' }};">
+                        ⬆️ <span class="action-label">Update</span>
+                    </button>
+                </div>
             </div>
         </div>
         {% endmacro %}

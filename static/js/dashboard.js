@@ -47,7 +47,30 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
-function showToast(type, message) {
+function setButtonLoading(btn, loading, originalText = null) {
+    if (!btn) return;
+    if (loading) {
+        btn._originalText = btn.innerHTML;
+        btn.classList.add('loading');
+        btn.disabled = true;
+    } else {
+        btn.classList.remove('loading');
+        btn.disabled = false;
+        if (originalText !== null) {
+            btn.innerHTML = originalText;
+        } else if (btn._originalText) {
+            btn.innerHTML = btn._originalText;
+        }
+    }
+}
+
+function confirmAction(message, dangerLevel = 'normal') {
+    // For dangerous actions, require typing confirmation in future
+    // For now, use confirm() with clear messaging
+    return confirm(message);
+}
+
+function showToast(type, message, duration = 3000) {
     let container = document.querySelector('.toast-container');
     if (!container) {
         container = document.createElement('div');
@@ -61,7 +84,7 @@ function showToast(type, message) {
     setTimeout(() => {
         toast.style.opacity = '0';
         setTimeout(() => toast.remove(), 300);
-    }, 3000);
+    }, duration);
 }
 
 // =============================================================================
@@ -111,13 +134,24 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Setup search input
     const searchInput = document.getElementById('searchInput');
+    const searchShortcut = document.querySelector('.search-shortcut');
+    
     searchInput.addEventListener('input', debounce(function() {
         searchTerm = this.value.toLowerCase().trim();
         document.getElementById('searchClear').style.display = searchTerm ? 'block' : 'none';
+        if (searchShortcut) searchShortcut.style.display = searchTerm ? 'none' : '';
         currentPage = 1;
         filterContainers();
         renderContainers();
     }, 200));
+    
+    // Hide shortcut when focused
+    searchInput.addEventListener('focus', function() {
+        if (searchShortcut) searchShortcut.style.display = 'none';
+    });
+    searchInput.addEventListener('blur', function() {
+        if (searchShortcut && !this.value) searchShortcut.style.display = '';
+    });
     
     // Keyboard shortcut for search
     document.addEventListener('keydown', function(e) {
@@ -582,7 +616,9 @@ async function copyLogs() {
 // =============================================================================
 
 async function restartContainer(id, name) {
-    if (!confirm(`Are you sure you want to restart ${name}?`)) return;
+    if (!confirmAction(`Restart container "${name}"?\n\nThe container will briefly stop and start again.`)) return;
+    
+    showToast('info', `Restarting ${name}...`);
     
     try {
         const response = await fetch(`/api/container/${id}/restart`, { method: 'POST', headers: csrfHeaders() });
@@ -601,7 +637,9 @@ async function restartContainer(id, name) {
 }
 
 async function stopContainer(id, name) {
-    if (!confirm(`Are you sure you want to stop ${name}?`)) return;
+    if (!confirmAction(`Stop container "${name}"?\n\nThe container will be gracefully stopped.`)) return;
+    
+    showToast('info', `Stopping ${name}...`);
     
     try {
         const response = await fetch(`/api/container/${id}/stop`, { method: 'POST', headers: csrfHeaders() });
@@ -620,7 +658,7 @@ async function stopContainer(id, name) {
 }
 
 async function startContainer(id, name) {
-    if (!confirm(`Are you sure you want to start ${name}?`)) return;
+    showToast('info', `Starting ${name}...`);
     
     try {
         const response = await fetch(`/api/container/${id}/start`, { method: 'POST', headers: csrfHeaders() });
@@ -639,7 +677,9 @@ async function startContainer(id, name) {
 }
 
 async function removeContainer(id, name) {
-    if (!confirm(`Are you sure you want to remove container ${name}? This cannot be undone.`)) return;
+    if (!confirmAction(`⚠️ DELETE container "${name}"?\n\nThis will permanently remove the container.\nVolumes and data may be lost. This cannot be undone.`, 'danger')) return;
+    
+    showToast('info', `Removing ${name}...`);
     
     try {
         const response = await fetch(`/api/container/${id}/remove`, { 
@@ -661,9 +701,9 @@ async function removeContainer(id, name) {
 }
 
 async function recreateContainer(id, name) {
-    if (!confirm(`Recreate container ${name}? This will:\n• Pull the latest image\n• Stop and remove the current container\n• Create a new container with the same config\n• Rescan for vulnerabilities\n\nContinue?`)) return;
+    if (!confirmAction(`Recreate container "${name}"?\n\nThis will:\n• Pull the latest image\n• Stop and remove the current container\n• Create a new container with the same config\n• Rescan for vulnerabilities`)) return;
     
-    showToast('info', `Recreating ${name}...`);
+    showToast('info', `Recreating ${name}... This may take a moment.`, 5000);
     
     try {
         const response = await fetch(`/api/container/${id}/recreate`, { 
@@ -739,7 +779,7 @@ async function loadStoredUpdates() {
 async function checkAllImageUpdates() {
     const btn = document.getElementById('checkUpdatesBtn');
     const originalText = btn.innerHTML;
-    btn.innerHTML = '⏳ Checking...';
+    btn.innerHTML = '<span class="loading-spinner"></span> Checking...';
     btn.disabled = true;
     
     // Collect all unique images from containers
@@ -1728,11 +1768,11 @@ async function bulkRecreateContainers() {
 // =============================================================================
 
 async function updateContainer(containerId, containerName) {
-    if (!confirm(`Update container "${containerName}"?\n\nThis will:\n1. Pull the latest image\n2. Stop the container\n3. Recreate it with the same settings\n4. Start it if it was running`)) {
+    if (!confirmAction(`Update container "${containerName}"?\n\nThis will:\n• Pull the latest image\n• Stop the container\n• Recreate it with the same settings\n• Start it if it was running`)) {
         return;
     }
     
-    showToast('info', `Updating ${containerName}... This may take a moment.`);
+    showToast('info', `Updating ${containerName}... This may take a moment.`, 6000);
     
     try {
         const response = await fetch(`/api/container/${containerId}/recreate`, {
@@ -1816,15 +1856,17 @@ async function updateAllContainers() {
         return;
     }
     
-    const names = containersWithUpdates.map(c => c.name).join('\n  • ');
-    if (!confirm(`Update ${containersWithUpdates.length} container(s)?\n\n  • ${names}\n\nThis will pull latest images and recreate each container.`)) {
+    const names = containersWithUpdates.map(c => c.name).join('\n• ');
+    if (!confirmAction(`Update ${containersWithUpdates.length} container(s)?\n\n• ${names}\n\nThis will pull latest images and recreate each container.`)) {
         return;
     }
     
     const btn = document.getElementById('updateAllBtn');
     const originalText = btn.innerHTML;
-    btn.innerHTML = '⏳ Updating...';
+    btn.innerHTML = '<span class="loading-spinner"></span> Updating...';
     btn.disabled = true;
+    
+    showToast('info', `Updating ${containersWithUpdates.length} container(s)...`, 5000);
     
     try {
         const response = await fetch('/api/containers/update-all', {

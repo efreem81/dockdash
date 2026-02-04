@@ -53,12 +53,15 @@
                     <a href="{{ url.url }}" target="_blank" class="btn btn-primary btn-sm">
                         🔗 Open
                     </a>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="copyToClipboard('{{ url.url }}')">
+                        📋 Copy
+                    </button>
                     <a href="{{ url_for('urls.edit_url', url_id=url.id) }}" class="btn btn-secondary btn-sm">
                         ✏️ Edit
                     </a>
                     <form action="{{ url_for('urls.delete_url', url_id=url.id) }}" method="POST" style="display: inline;">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this URL?')">
+                        <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete \"{{ url.title }}\"?\\n\\nThis cannot be undone.')">
                             🗑️ Delete
                         </button>
                     </form>

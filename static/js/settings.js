@@ -11,7 +11,7 @@ function csrfHeaders() {
     return token ? { 'X-CSRFToken': token } : {};
 }
 
-function showToast(type, message) {
+function showToast(type, message, duration = 3000) {
     let container = document.querySelector('.toast-container');
     if (!container) {
         container = document.createElement('div');
@@ -25,7 +25,7 @@ function showToast(type, message) {
     setTimeout(() => {
         toast.style.opacity = '0';
         setTimeout(() => toast.remove(), 300);
-    }, 3000);
+    }, duration);
 }
 
 function escapeHtml(str) {
@@ -238,7 +238,9 @@ async function testWebhookById(id) {
 }
 
 async function deleteWebhook(id) {
-    if (!confirm('Delete this webhook?')) return;
+    if (!confirm('Delete this webhook?\\n\\nYou will no longer receive notifications from it.')) return;
+    
+    showToast('info', 'Deleting webhook...');
     
     try {
         const response = await fetch(`/api/webhook/${id}`, {
@@ -675,26 +677,42 @@ async function updateThresholds() {
 // =============================================================================
 
 async function pruneContainers() {
-    if (!confirm('Remove all stopped containers?')) return;
-    await doPrune('/api/containers/prune', 'containers');
+    if (!confirm('Remove all stopped containers?\n\nThis will delete containers that are not currently running.')) return;
+    const btn = event.target;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<span class="loading-spinner"></span> Pruning...';
+    btn.disabled = true;
+    await doPrune('/api/containers/prune', 'containers', btn, originalText);
 }
 
 async function pruneImages() {
-    if (!confirm('Remove unused images?')) return;
-    await doPrune('/api/images/prune', 'images');
+    if (!confirm('Remove unused images?\n\nThis will delete images not used by any container.')) return;
+    const btn = event.target;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<span class="loading-spinner"></span> Pruning...';
+    btn.disabled = true;
+    await doPrune('/api/images/prune', 'images', btn, originalText);
 }
 
 async function pruneVolumes() {
-    if (!confirm('Remove unused volumes? This may cause data loss!')) return;
-    await doPrune('/api/volumes/prune', 'volumes');
+    if (!confirm('⚠️ Remove unused volumes?\n\nWARNING: This may cause permanent data loss!\nVolumes not attached to any container will be deleted.')) return;
+    const btn = event.target;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<span class="loading-spinner"></span> Pruning...';
+    btn.disabled = true;
+    await doPrune('/api/volumes/prune', 'volumes', btn, originalText);
 }
 
 async function pruneAll() {
-    if (!confirm('Remove ALL unused containers, images, and volumes? This cannot be undone!')) return;
-    await doPrune('/api/system/prune', 'resources');
+    if (!confirm('⚠️ FULL SYSTEM CLEANUP\n\nThis will remove:\n• All stopped containers\n• All unused images\n• All unused volumes (data loss!)\n\nThis cannot be undone. Continue?')) return;
+    const btn = event.target;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<span class="loading-spinner"></span> Pruning...';
+    btn.disabled = true;
+    await doPrune('/api/system/prune', 'resources', btn, originalText);
 }
 
-async function doPrune(url, type) {
+async function doPrune(url, type, btn, originalText) {
     showToast('info', `Pruning ${type}...`);
     
     try {
@@ -706,12 +724,17 @@ async function doPrune(url, type) {
         
         if (result.success) {
             const space = result.space_reclaimed_human || result.total_space_reclaimed_human || '0 B';
-            showToast('success', `Cleaned ${type}. Reclaimed: ${space}`);
+            showToast('success', `Cleaned ${type}. Reclaimed: ${space}`, 5000);
         } else {
             showToast('error', result.error || `Failed to prune ${type}`);
         }
     } catch (error) {
         showToast('error', `Failed to prune ${type}`);
+    } finally {
+        if (btn && originalText) {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
     }
 }
 
