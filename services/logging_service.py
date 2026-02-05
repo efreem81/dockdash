@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import warnings
 from typing import Optional
 
 
@@ -70,6 +71,13 @@ def configure_app_logging(app=None, level: Optional[str] = None) -> str:
         root.addHandler(handler)
 
     root.setLevel(numeric_level)
+
+    # Suppress urllib3 TLS verification warnings (request made with verify=False).
+    try:
+        from urllib3.exceptions import InsecureRequestWarning
+        warnings.filterwarnings('ignore', category=InsecureRequestWarning)
+    except Exception:
+        pass
 
     # Keep noisy libraries quieter unless explicitly debugging.
     if numeric_level > logging.DEBUG:
