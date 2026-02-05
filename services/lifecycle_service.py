@@ -3,6 +3,7 @@ Container Lifecycle Service - Recreate and Upgrade Containers
 Handles container recreation with preserved configuration
 """
 import logging
+import time
 from services.docker_service import get_docker_client
 
 logger = logging.getLogger(__name__)
@@ -56,7 +57,8 @@ def _build_host_config(client, host_config: dict, primary_network: str | None):
 
     network_mode = hc.get('NetworkMode')
     if primary_network and primary_network not in ('bridge', 'host', 'none', 'default'):
-        network_mode = primary_network
+        if not (isinstance(network_mode, str) and network_mode.startswith('container:')):
+            network_mode = primary_network
     if network_mode == 'default':
         network_mode = None
 
@@ -88,6 +90,23 @@ def _build_host_config(client, host_config: dict, primary_network: str | None):
         shm_size=hc.get('ShmSize') or None,
         ulimits=hc.get('Ulimits') or None,
     )
+
+
+def _resolve_container_network_mode(client, network_mode: str | None) -> str | None:
+    if not network_mode or not isinstance(network_mode, str):
+        return network_mode
+    if not network_mode.startswith('container:'):
+        return network_mode
+
+    ref = network_mode.split(':', 1)[1]
+    if not ref:
+        return network_mode
+
+    try:
+        target = client.containers.get(ref)
+        return f"container:{target.name}"
+    except Exception:
+        return network_mode
 
 
 def _build_networking_config(client, networks: dict, primary_network: str | None):
@@ -228,8 +247,12 @@ def recreate_container(container_id, pull_latest=True, skip_scan=False):
 
             networks = (network_settings or {}).get('Networks') or {}
             primary_network_mode = (host_config or {}).get('NetworkMode')
+            primary_network_mode = _resolve_container_network_mode(client, primary_network_mode)
             networking_config, primary_network = _build_networking_config(client, networks, primary_network_mode)
-            host_cfg_obj = _build_host_config(client, host_config, primary_network)
+            host_cfg_source = dict(host_config or {})
+            if primary_network_mode:
+                host_cfg_source['NetworkMode'] = primary_network_mode
+            host_cfg_obj = _build_host_config(client, host_cfg_source, primary_network)
 
             ports = _build_container_ports(config, host_config)
             volumes = _build_container_volumes(config, host_config)
@@ -245,6 +268,8 @@ def recreate_container(container_id, pull_latest=True, skip_scan=False):
                 labels=config.get('Labels') or None,
                 hostname=config.get('Hostname') or None,
                 domainname=config.get('Domainname') or None,
+                stop_signal=config.get('StopSignal') or None,
+                healthcheck=config.get('Healthcheck') or None,
                 tty=bool(config.get('Tty')),
                 stdin_open=bool(config.get('OpenStdin')),
                 ports=ports,
@@ -272,7 +297,14 @@ def recreate_container(container_id, pull_latest=True, skip_scan=False):
                         exit_code = state.get('ExitCode')
                         status = state.get('Status')
                         err = state.get('Error')
-                        raise RuntimeError(f"Container did not stay running (status={status}, exit_code={exit_code}, error={err})")
+                        try:
+                            last_logs = new_container.logs(tail=80).decode('utf-8', errors='ignore')
+                        except Exception:
+                            last_logs = None
+                        log_hint = f"; logs_tail=\n{last_logs}" if last_logs else ""
+                        raise RuntimeError(
+                            f"Container did not stay running (status={status}, exit_code={exit_code}, error={err}){log_hint}"
+                        )
                     except Exception as start_error:
                         raise start_error
 
