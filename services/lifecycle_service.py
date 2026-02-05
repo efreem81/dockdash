@@ -362,6 +362,13 @@ def recreate_container(container_id, pull_latest=True, skip_scan=False):
             except Exception as e:
                 logger.warning('Could not scan image %s: %s', image_ref, e)
         
+        # Clear the update status since we just pulled/recreated with latest image
+        try:
+            from services.update_service import clear_update_status
+            clear_update_status(image_ref)
+        except Exception as e:
+            logger.warning('Could not clear update status for %s: %s', image_ref, e)
+        
         return {
             'success': True,
             'message': f'Container {old_name} recreated successfully',

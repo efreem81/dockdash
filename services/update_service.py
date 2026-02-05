@@ -128,16 +128,26 @@ def get_image_update_status(image_ref: str) -> Optional[Dict]:
 
 
 def clear_update_status(image_ref: str = None):
-    """Clear stored update status for an image or all images."""
+    """Clear stored update status for an image or all images.
+    
+    When clearing a specific image, we set has_update=False rather than deleting,
+    so we preserve the check history. When clearing all, we delete everything.
+    """
     from config import db
     from models import ImageUpdate
+    from datetime import datetime
     
     try:
         if image_ref:
-            ImageUpdate.query.filter_by(image_ref=image_ref).delete()
+            # For a specific image, just mark it as no longer having an update
+            update = ImageUpdate.query.filter_by(image_ref=image_ref).first()
+            if update:
+                update.has_update = False
+                update.checked_at = datetime.utcnow()
+                db.session.commit()
         else:
             ImageUpdate.query.delete()
-        db.session.commit()
+            db.session.commit()
         return True
     except Exception as e:
         _log(logging.ERROR, f"Error clearing update status: {e}")

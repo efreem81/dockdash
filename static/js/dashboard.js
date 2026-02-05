@@ -124,6 +124,9 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('sortSelect').value = savedSort;
     }
     
+    // Restore saved filter state from sessionStorage
+    restoreFilterState();
+    
     // Initial render
     filteredContainers = [...allContainers];
     applySort();
@@ -1326,10 +1329,54 @@ function closeVulnModal(event) {
 // Container Filtering
 // =============================================================================
 
+function saveFilterState() {
+    const state = {
+        hasUpdate: document.getElementById('filterHasUpdate')?.checked || false,
+        hasVuln: document.getElementById('filterHasVuln')?.checked || false,
+        filterCritical: document.getElementById('filterCritical')?.checked ?? true,
+        filterHigh: document.getElementById('filterHigh')?.checked ?? true,
+        filterMedium: document.getElementById('filterMedium')?.checked ?? false,
+        filterLow: document.getElementById('filterLow')?.checked ?? false
+    };
+    sessionStorage.setItem('dockdash-filters', JSON.stringify(state));
+}
+
+function restoreFilterState() {
+    try {
+        const saved = sessionStorage.getItem('dockdash-filters');
+        if (!saved) return;
+        const state = JSON.parse(saved);
+        
+        const hasUpdateEl = document.getElementById('filterHasUpdate');
+        const hasVulnEl = document.getElementById('filterHasVuln');
+        const criticalEl = document.getElementById('filterCritical');
+        const highEl = document.getElementById('filterHigh');
+        const mediumEl = document.getElementById('filterMedium');
+        const lowEl = document.getElementById('filterLow');
+        
+        if (hasUpdateEl && state.hasUpdate) hasUpdateEl.checked = true;
+        if (hasVulnEl && state.hasVuln) hasVulnEl.checked = true;
+        if (criticalEl) criticalEl.checked = state.filterCritical ?? true;
+        if (highEl) highEl.checked = state.filterHigh ?? true;
+        if (mediumEl) mediumEl.checked = state.filterMedium ?? false;
+        if (lowEl) lowEl.checked = state.filterLow ?? false;
+        
+        // Apply restored filters
+        if (state.hasUpdate || state.hasVuln) {
+            applyFilters();
+        }
+    } catch (e) {
+        console.warn('Could not restore filter state:', e);
+    }
+}
+
 function applyFilters() {
     const hasUpdateFilter = document.getElementById('filterHasUpdate')?.checked || false;
     const hasVulnFilter = document.getElementById('filterHasVuln')?.checked || false;
     const stoppedOnly = document.getElementById('filterStopped')?.checked || false;
+    
+    // Save filter state for persistence across refresh
+    saveFilterState();
     const showCritical = document.getElementById('filterCritical')?.checked ?? true;
     const showHigh = document.getElementById('filterHigh')?.checked ?? true;
     const showMedium = document.getElementById('filterMedium')?.checked ?? false;
@@ -1438,6 +1485,8 @@ function clearFilters() {
     document.getElementById('filterHigh').checked = true;
     document.getElementById('filterMedium').checked = false;
     document.getElementById('filterLow').checked = false;
+    // Clear saved filter state
+    sessionStorage.removeItem('dockdash-filters');
     applyFilters();
 }
 

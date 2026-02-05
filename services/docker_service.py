@@ -129,6 +129,22 @@ def get_container_info(container):
     host_ip = get_host_ip()
     seen_host_ports = set()
     
+    # Check if this container uses another container's network (network_mode: container:xxx)
+    network_mode = host_config.get('NetworkMode', '')
+    network_container_name = None
+    if network_mode.startswith('container:'):
+        network_container_ref = network_mode.split(':', 1)[1]
+        network_container_name = network_container_ref
+        # Try to get ports from the network-providing container
+        try:
+            client = get_docker_client()
+            if client:
+                net_container = client.containers.get(network_container_ref)
+                net_attrs = net_container.attrs
+                ports = net_attrs.get('NetworkSettings', {}).get('Ports', {}) or {}
+        except Exception:
+            pass
+    
     for container_port, bindings in ports.items():
         if bindings:
             for binding in bindings:
@@ -141,6 +157,9 @@ def get_container_info(container):
                         'url': f"http://{host_ip}:{host_port}",
                         'host_ip': host_ip
                     }
+                    # Mark if ports come from network container
+                    if network_container_name:
+                        port_info['via_container'] = network_container_name
                     info['ports'].append(port_info)
                     info['urls'].append(port_info['url'])
     
