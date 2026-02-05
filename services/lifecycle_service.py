@@ -339,7 +339,6 @@ def recreate_container(container_id, pull_latest=True, skip_scan=False):
         if not skip_scan:
             try:
                 from services.vulnerability_service import scan_image, save_scan_result, clear_image_cache
-                import time
                 # Clear cache to force fresh scan of the (potentially new) image
                 clear_image_cache(image_ref)
                 start_time = time.time()
