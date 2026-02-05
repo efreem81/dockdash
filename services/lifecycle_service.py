@@ -42,7 +42,7 @@ def _build_container_volumes(config: dict, host_config: dict):
     return sorted(volumes) if volumes else None
 
 
-def _build_host_config(client, host_config: dict, primary_network: str | None):
+def _build_host_config(client, host_config: dict, primary_network: str | None, is_container_network: bool = False):
     api = client.api
     hc = host_config or {}
 
@@ -62,9 +62,13 @@ def _build_host_config(client, host_config: dict, primary_network: str | None):
     if network_mode == 'default':
         network_mode = None
 
+    # When using container: network mode, port_bindings must be None
+    # Ports are inherited from the target container
+    port_bindings = None if is_container_network else hc.get('PortBindings')
+
     return api.create_host_config(
         binds=hc.get('Binds'),
-        port_bindings=hc.get('PortBindings'),
+        port_bindings=port_bindings,
         restart_policy=restart_policy,
         network_mode=network_mode,
         privileged=bool(hc.get('Privileged')),
@@ -252,14 +256,18 @@ def recreate_container(container_id, pull_latest=True, skip_scan=False):
             host_cfg_source = dict(host_config or {})
             if primary_network_mode:
                 host_cfg_source['NetworkMode'] = primary_network_mode
-            host_cfg_obj = _build_host_config(client, host_cfg_source, primary_network)
-
             container_network_mode = host_cfg_source.get('NetworkMode')
             is_container_network = isinstance(container_network_mode, str) and container_network_mode.startswith('container:')
+            
+            # Build host_config after determining is_container_network so we can skip port_bindings if needed
+            host_cfg_obj = _build_host_config(client, host_cfg_source, primary_network, is_container_network)
+            
             if is_container_network:
                 networking_config = None
 
-            ports = _build_container_ports(config, host_config)
+            # When using container: network mode, ports are inherited from the target container
+            # and cannot be specified - Docker will reject the request otherwise
+            ports = None if is_container_network else _build_container_ports(config, host_config)
             volumes = _build_container_volumes(config, host_config)
 
             created = client.api.create_container(
