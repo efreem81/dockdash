@@ -3,7 +3,7 @@
 {% block title %}Dashboard - DockDash{% endblock %}
 
 {% block content %}
-<div class="dashboard">
+<div class="dashboard" data-show-all="{{ 'true' if show_all else 'false' }}">
     <div class="page-header">
         <h1>🐳 Docker Containers</h1>
         <div class="header-actions">
@@ -24,22 +24,17 @@
                     </svg>
                 </button>
             </div>
-            <label class="toggle-switch">
-                <input type="checkbox" id="showAllToggle" {% if show_all %}checked{% endif %}>
-                <span class="toggle-slider"></span>
-                <span class="toggle-label">Show stopped containers</span>
-            </label>
             <button class="btn btn-secondary" onclick="checkAllImageUpdates()" id="checkUpdatesBtn" title="Check for image updates">
-                ⬆️ Check Updates
+                🔍 Updates
             </button>
             <button class="btn btn-success" onclick="updateAllContainers()" id="updateAllBtn" style="display: {{ 'inline-flex' if updates_count > 0 else 'none' }};" title="Update all containers with available updates">
                 ⬆️ Update All (<span id="updateAllCount">{{ updates_count }}</span>)
             </button>
             <button class="btn btn-secondary" onclick="scanAllVulnerabilities()" id="scanVulnBtn" title="Scan all images for security vulnerabilities">
-                🛡️ Security Scan
+                🛡️ Security
             </button>
-            <button class="btn btn-secondary" onclick="refreshContainers()">
-                🔄 Refresh
+            <button class="btn btn-secondary btn-icon" onclick="refreshContainers()" title="Refresh">
+                🔄
             </button>
         </div>
     </div>
@@ -82,9 +77,6 @@
     <div class="info-bar">
         <span class="host-ip">🌐 Host IP: <strong>{{ host_ip }}</strong></span>
         <span class="container-count">📦 Containers: <strong id="containerCount">{{ containers|length }}</strong></span>
-        <a href="#" class="info-stat info-stat-clickable" id="updateCountLink" onclick="toggleUpdateFilter(); return false;" style="display: {{ 'inline-flex' if updates_count > 0 else 'none' }};" title="Click to filter containers with updates">
-            ⬆️ Updates: <strong id="updateCountValue">{{ updates_count }}</strong>
-        </a>
         {% set vuln_container_count = containers|selectattr('vulnerabilities')|selectattr('vulnerabilities.total', 'gt', 0)|list|length %}
         <a href="#" class="info-stat info-stat-clickable" id="vulnCountLink" onclick="toggleVulnFilter(); return false;" style="display: {{ 'inline-flex' if vuln_container_count > 0 else 'none' }};" title="Click to filter containers with vulnerabilities">
             {% set total_critical = vuln_results.values()|selectattr('critical')|map(attribute='critical')|sum %}
@@ -113,6 +105,11 @@
                 <input type="checkbox" id="filterHasVuln" onchange="applyFilters()">
                 {% set vuln_container_count = containers|selectattr('vulnerabilities')|selectattr('vulnerabilities.total', 'gt', 0)|list|length %}
                 <span class="filter-tag filter-vuln">🛡️ Has Issues (<span id="filterVulnCount">{{ vuln_container_count }}</span>)</span>
+            </label>
+            {% set stopped_container_count = containers|rejectattr('status', 'equalto', 'running')|list|length %}
+            <label class="filter-checkbox">
+                <input type="checkbox" id="filterStopped" onchange="applyFilters()" {% if show_all %}checked{% endif %}>
+                <span class="filter-tag">⏹️ Stopped (<span id="filterStoppedCount">{{ stopped_container_count }}</span>)</span>
             </label>
         </div>
         <div class="filter-group filter-severity-group" id="severityFilters" style="display: none;">
@@ -302,7 +299,6 @@
             {% endif %}
 
             <div class="container-actions">
-                <!-- Primary lifecycle actions -->
                 <div class="btn-group">
                     {% if container.status == 'running' %}
                     <button class="btn btn-warning btn-xs" onclick="restartContainer('{{ container.id }}', '{{ container.name }}')" title="Restart container">
@@ -315,35 +311,9 @@
                     <button class="btn btn-success btn-xs" onclick="startContainer('{{ container.id }}', '{{ container.name }}')" title="Start container">
                         ▶️ <span class="action-label">Start</span>
                     </button>
-                    <button class="btn btn-danger btn-xs" onclick="removeContainer('{{ container.id }}', '{{ container.name }}')" title="Remove container">
-                        🗑️ <span class="action-label">Remove</span>
-                    </button>
-                    {% endif %}
-                </div>
-                <!-- Info/debug actions -->
-                <div class="btn-group">
-                    {% if container.status == 'running' %}
-                    <button class="btn btn-info btn-xs" onclick="toggleStats('{{ container.id }}')" title="View live stats">
-                        📊
-                    </button>
-                    <button class="btn btn-secondary btn-xs" onclick="openExec('{{ container.id }}', '{{ container.name }}')" title="Execute command">
-                        💻
-                    </button>
                     {% endif %}
                     <button class="btn btn-secondary btn-xs" onclick="openLogs('{{ container.id }}', '{{ container.name }}')" title="View logs">
-                        📜
-                    </button>
-                    <button class="btn btn-secondary btn-xs" onclick="openInspect('{{ container.id }}', '{{ container.name }}')" title="Inspect details">
-                        🔍
-                    </button>
-                </div>
-                <!-- Update actions -->
-                <div class="btn-group">
-                    <button class="btn btn-info btn-xs" onclick="recreateContainer('{{ container.id }}', '{{ container.name }}')" title="Recreate with latest image">
-                        🔃 <span class="action-label">Recreate</span>
-                    </button>
-                    <button class="btn btn-success btn-xs update-container-btn" onclick="updateContainer('{{ container.id }}', '{{ container.name }}')" title="Update available - click to update" style="display: {{ 'inline-flex' if container.has_update else 'none' }};">
-                        ⬆️ <span class="action-label">Update</span>
+                        📜 <span class="action-label">Logs</span>
                     </button>
                 </div>
             </div>
@@ -406,7 +376,7 @@
         <div class="empty-state" id="emptyState" style="display: none;">
             <span class="empty-icon">📦</span>
             <h3 id="emptyStateTitle">No containers found</h3>
-            <p id="emptyStateText">{% if show_all %}There are no Docker containers on this host.{% else %}There are no running containers. Toggle "Show stopped containers" to see all.{% endif %}</p>
+            <p id="emptyStateText">{% if show_all %}There are no Docker containers on this host.{% else %}There are no running containers. Use the "Stopped" filter to see stopped containers.{% endif %}</p>
         </div>
         <div class="empty-state" id="noResultsState" style="display: none;">
             <span class="empty-icon">🔍</span>
@@ -490,31 +460,13 @@
                         <button class="btn btn-danger btn-xs" onclick="stopContainer('{{ container.id }}', '{{ container.name }}')" title="Stop">
                             ⏹️
                         </button>
-                        <button class="btn btn-info btn-xs" onclick="toggleStats('{{ container.id }}')" title="Stats">
-                            📊
-                        </button>
-                        <button class="btn btn-secondary btn-xs" onclick="openExec('{{ container.id }}', '{{ container.name }}')" title="Execute Command">
-                            💻
-                        </button>
                         {% else %}
                         <button class="btn btn-success btn-xs" onclick="startContainer('{{ container.id }}', '{{ container.name }}')" title="Start">
                             ▶️
                         </button>
-                        <button class="btn btn-danger btn-xs" onclick="removeContainer('{{ container.id }}', '{{ container.name }}')" title="Remove">
-                            🗑️
-                        </button>
                         {% endif %}
                         <button class="btn btn-secondary btn-xs" onclick="openLogs('{{ container.id }}', '{{ container.name }}')" title="Logs">
                             📜
-                        </button>
-                        <button class="btn btn-secondary btn-xs" onclick="openInspect('{{ container.id }}', '{{ container.name }}')" title="Inspect">
-                            🔍
-                        </button>
-                        <button class="btn btn-info btn-xs" onclick="recreateContainer('{{ container.id }}', '{{ container.name }}')" title="Recreate">
-                            🔃
-                        </button>
-                        <button class="btn btn-success btn-xs update-container-btn" onclick="updateContainer('{{ container.id }}', '{{ container.name }}')" title="Update" style="display: {{ 'inline-flex' if container.has_update else 'none' }};">
-                            ⬆️
                         </button>
                     </td>
                     <td class="cell-links">
@@ -550,7 +502,7 @@
             <div class="empty-state">
                 <span class="empty-icon">📦</span>
                 <h3>No containers found</h3>
-                <p>{% if show_all %}There are no Docker containers on this host.{% else %}There are no running containers. Toggle "Show stopped containers" to see all.{% endif %}</p>
+                <p>{% if show_all %}There are no Docker containers on this host.{% else %}There are no running containers. Use the "Stopped" filter to see stopped containers.{% endif %}</p>
             </div>
         {% endif %}
     </div>

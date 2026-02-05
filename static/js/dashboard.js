@@ -165,13 +165,26 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     
-    // Show all toggle
-    const showAllToggle = document.getElementById('showAllToggle');
-    if (showAllToggle) {
-        showAllToggle.addEventListener('change', function() {
-            const showAll = this.checked;
-            window.location.href = '/dashboard?show_all=' + showAll;
+    // Stopped containers filter (loads stopped containers when enabled)
+    const stoppedFilter = document.getElementById('filterStopped');
+    const dashboardEl = document.querySelector('.dashboard');
+    if (stoppedFilter) {
+        stoppedFilter.addEventListener('change', function() {
+            const pageShowAll = dashboardEl?.dataset.showAll === 'true';
+            if (this.checked && !pageShowAll) {
+                window.location.href = '/dashboard?show_all=true';
+                return;
+            }
+            if (!this.checked && pageShowAll) {
+                window.location.href = '/dashboard?show_all=false';
+                return;
+            }
+            applyFilters();
         });
+
+        if (stoppedFilter.checked) {
+            applyFilters();
+        }
     }
     
     // Logs follow checkbox
@@ -735,7 +748,8 @@ async function recreateContainer(id, name) {
 
 async function waitForContainerStatus(id, expectedStatuses, maxMs) {
     const start = Date.now();
-    const showAll = document.getElementById('showAllToggle')?.checked ? 'true' : 'false';
+    const dashboardEl = document.querySelector('.dashboard');
+    const showAll = (dashboardEl?.dataset.showAll === 'true' || document.getElementById('filterStopped')?.checked) ? 'true' : 'false';
     while ((Date.now() - start) < maxMs) {
         try {
             const resp = await fetch(`/api/containers?show_all=${showAll}`);
@@ -1315,6 +1329,7 @@ function closeVulnModal(event) {
 function applyFilters() {
     const hasUpdateFilter = document.getElementById('filterHasUpdate')?.checked || false;
     const hasVulnFilter = document.getElementById('filterHasVuln')?.checked || false;
+    const stoppedOnly = document.getElementById('filterStopped')?.checked || false;
     const showCritical = document.getElementById('filterCritical')?.checked ?? true;
     const showHigh = document.getElementById('filterHigh')?.checked ?? true;
     const showMedium = document.getElementById('filterMedium')?.checked ?? false;
@@ -1329,7 +1344,7 @@ function applyFilters() {
     // Show/hide clear button
     const clearBtn = document.getElementById('clearFiltersBtn');
     if (clearBtn) {
-        clearBtn.style.display = (hasUpdateFilter || hasVulnFilter) ? 'inline-block' : 'none';
+        clearBtn.style.display = (hasUpdateFilter || hasVulnFilter || stoppedOnly) ? 'inline-block' : 'none';
     }
     
     const cards = document.querySelectorAll('.container-card');
@@ -1340,6 +1355,12 @@ function applyFilters() {
     cards.forEach(card => {
         let show = true;
         
+        // Check stopped-only filter
+        if (stoppedOnly) {
+            const status = card.dataset.status;
+            if (status === 'running') show = false;
+        }
+
         // Check update filter
         if (hasUpdateFilter) {
             const hasUpdate = card.dataset.hasUpdate === 'true';
@@ -1370,6 +1391,11 @@ function applyFilters() {
     rows.forEach(row => {
         let show = true;
         
+        if (stoppedOnly) {
+            const status = row.dataset.status;
+            if (status === 'running') show = false;
+        }
+
         if (hasUpdateFilter) {
             const hasUpdate = row.dataset.hasUpdate === 'true';
             if (!hasUpdate) show = false;
@@ -1406,6 +1432,8 @@ function applyFilters() {
 function clearFilters() {
     document.getElementById('filterHasUpdate').checked = false;
     document.getElementById('filterHasVuln').checked = false;
+    const stoppedFilter = document.getElementById('filterStopped');
+    if (stoppedFilter) stoppedFilter.checked = false;
     document.getElementById('filterCritical').checked = true;
     document.getElementById('filterHigh').checked = true;
     document.getElementById('filterMedium').checked = false;

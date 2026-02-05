@@ -254,6 +254,11 @@ def recreate_container(container_id, pull_latest=True, skip_scan=False):
                 host_cfg_source['NetworkMode'] = primary_network_mode
             host_cfg_obj = _build_host_config(client, host_cfg_source, primary_network)
 
+            container_network_mode = host_cfg_source.get('NetworkMode')
+            is_container_network = isinstance(container_network_mode, str) and container_network_mode.startswith('container:')
+            if is_container_network:
+                networking_config = None
+
             ports = _build_container_ports(config, host_config)
             volumes = _build_container_volumes(config, host_config)
 
@@ -266,8 +271,8 @@ def recreate_container(container_id, pull_latest=True, skip_scan=False):
                 working_dir=config.get('WorkingDir') or None,
                 user=config.get('User') or None,
                 labels=config.get('Labels') or None,
-                hostname=config.get('Hostname') or None,
-                domainname=config.get('Domainname') or None,
+                hostname=None if is_container_network else (config.get('Hostname') or None),
+                domainname=None if is_container_network else (config.get('Domainname') or None),
                 stop_signal=config.get('StopSignal') or None,
                 healthcheck=config.get('Healthcheck') or None,
                 tty=bool(config.get('Tty')),
@@ -283,7 +288,8 @@ def recreate_container(container_id, pull_latest=True, skip_scan=False):
             logger.debug('Created new container %s for %s', new_container.short_id, original_name)
 
             # Attach to any additional networks
-            _connect_additional_networks(client, new_container, networks, primary_network)
+            if not is_container_network:
+                _connect_additional_networks(client, new_container, networks, primary_network)
 
             if was_running:
                 new_container.start()
