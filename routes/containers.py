@@ -4,7 +4,7 @@ Container management endpoints: start, stop, restart, logs, stats, exec, remove
 """
 import time
 import requests
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from flask_login import login_required
 
 from services.docker_service import (
@@ -252,18 +252,23 @@ def api_update_all_containers():
     # Run vulnerability scans sequentially for updated images (avoids Trivy lock conflicts)
     if updated_images:
         import threading
+        app = current_app._get_current_object()
+        images_to_scan = tuple(updated_images)
+
         def scan_updated_images():
             from services.vulnerability_service import scan_image, save_scan_result, clear_image_cache
             import time
-            for image_ref in updated_images:
-                try:
-                    clear_image_cache(image_ref)
-                    start_time = time.time()
-                    scan_result = scan_image(image_ref, 'CRITICAL,HIGH,MEDIUM,LOW')
-                    duration = time.time() - start_time
-                    save_scan_result(image_ref, scan_result, duration)
-                except Exception as e:
-                    print(f"Warning: Could not scan image {image_ref}: {e}")
+            with app.app_context():
+                for image_ref in images_to_scan:
+                    try:
+                        clear_image_cache(image_ref)
+                        start_time = time.time()
+                        scan_result = scan_image(image_ref, 'CRITICAL,HIGH,MEDIUM,LOW')
+                        duration = time.time() - start_time
+                        save_scan_result(image_ref, scan_result, duration)
+                    except Exception as e:
+                        print(f"Warning: Could not scan image {image_ref}: {e}")
+
         # Run scans in background thread so response isn't delayed
         threading.Thread(target=scan_updated_images, daemon=True).start()
     
