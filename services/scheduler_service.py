@@ -7,7 +7,7 @@ import time
 import threading
 import logging
 from datetime import datetime
-from typing import Dict, List, Optional, Callable
+from typing import Dict, Optional, Callable
 
 # Global scheduler state
 _scheduler = None
@@ -25,12 +25,12 @@ CHECK_INTERVAL = int(os.environ.get('MONITOR_INTERVAL', 60))  # seconds
 
 class SimpleScheduler:
     """Simple background scheduler using threading."""
-    
+
     def __init__(self):
         self.jobs: Dict[str, dict] = {}
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
-    
+
     def add_job(self, job_id: str, func: Callable, interval_seconds: int, **kwargs):
         """Add a recurring job."""
         self.jobs[job_id] = {
@@ -39,31 +39,31 @@ class SimpleScheduler:
             'kwargs': kwargs,
             'last_run': 0
         }
-    
+
     def remove_job(self, job_id: str):
         """Remove a job."""
         self.jobs.pop(job_id, None)
-    
+
     def start(self):
         """Start the scheduler in a background thread."""
         if self._thread and self._thread.is_alive():
             return
-        
+
         self._stop_event.clear()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
-    
+
     def stop(self):
         """Stop the scheduler."""
         self._stop_event.set()
         if self._thread:
             self._thread.join(timeout=5)
-    
+
     def _run(self):
         """Main scheduler loop."""
         while not self._stop_event.is_set():
             now = time.time()
-            
+
             for job_id, job in list(self.jobs.items()):
                 if (now - job['last_run']) >= job['interval']:
                     try:
@@ -72,7 +72,7 @@ class SimpleScheduler:
                         job['last_run'] = now
                     except Exception as e:
                         logger.exception('Scheduler job %s failed: %s', job_id, e)
-            
+
             # Sleep in small increments to allow quick shutdown
             for _ in range(10):
                 if self._stop_event.is_set():
@@ -105,12 +105,12 @@ def _run_with_app_context(app, job_func: Callable, **kwargs):
 def start_monitoring(app=None):
     """Start the background monitoring service."""
     global _is_running
-    
+
     if _is_running:
         return {'success': True, 'message': 'Monitoring already running'}
 
     logger.info('Starting background monitoring')
-    
+
     if app is None:
         try:
             from flask import current_app
@@ -119,7 +119,7 @@ def start_monitoring(app=None):
             app = None
 
     scheduler = get_scheduler()
-    
+
     # Add container stats monitoring job
     scheduler.add_job(
         'container_monitor',
@@ -128,7 +128,7 @@ def start_monitoring(app=None):
         app=app,
         job_func=check_container_resources
     )
-    
+
     # Add container state monitoring job
     scheduler.add_job(
         'state_monitor',
@@ -137,7 +137,7 @@ def start_monitoring(app=None):
         app=app,
         job_func=check_container_states
     )
-    
+
     # Add scheduled scan check (checks every minute if it's time to run)
     scheduler.add_job(
         'scheduled_scans',
@@ -146,10 +146,10 @@ def start_monitoring(app=None):
         app=app,
         job_func=run_scheduled_tasks
     )
-    
+
     scheduler.start()
     _is_running = True
-    
+
     return {'success': True, 'message': 'Monitoring started'}
 
 
@@ -160,7 +160,7 @@ def run_scheduled_tasks():
         run_scheduled_scan_if_due()
     except Exception as e:
         logger.exception('Scheduled scan check failed: %s', e)
-    
+
     try:
         from services.update_service import run_scheduled_check_if_due
         run_scheduled_check_if_due()
@@ -171,11 +171,11 @@ def run_scheduled_tasks():
 def stop_monitoring():
     """Stop the background monitoring service."""
     global _is_running, _scheduler
-    
+
     if _scheduler:
         _scheduler.stop()
         _scheduler = None
-    
+
     _is_running = False
     logger.info('Stopped background monitoring')
     return {'success': True, 'message': 'Monitoring stopped'}
@@ -197,24 +197,24 @@ def check_container_resources():
     from services.docker_service import get_docker_client, get_container_stats
     from services.notification_service import send_container_alert
     from models import WebhookConfig
-    
+
     client = get_docker_client()
     if not client:
         return
-    
+
     try:
         containers = client.containers.list()
         webhooks = WebhookConfig.query.filter_by(enabled=True).all()
-        
+
         for container in containers:
             try:
                 stats = get_container_stats(container.short_id)
                 if not stats or 'error' in stats:
                     continue
-                
+
                 container_name = container.name
                 alerts_sent = []
-                
+
                 # Check CPU threshold
                 cpu_percent = stats.get('cpu_percent', 0)
                 if cpu_percent > CPU_THRESHOLD:
@@ -226,7 +226,7 @@ def check_container_resources():
                         )
                         _mark_alert_sent(alert_key)
                         alerts_sent.append('high_cpu')
-                
+
                 # Check memory threshold
                 mem_percent = stats.get('memory_percent', 0)
                 if mem_percent > MEMORY_THRESHOLD:
@@ -238,7 +238,7 @@ def check_container_resources():
                         )
                         _mark_alert_sent(alert_key)
                         alerts_sent.append('high_memory')
-                
+
                 _last_check[container.short_id] = {
                     'name': container_name,
                     'cpu_percent': cpu_percent,
@@ -246,10 +246,10 @@ def check_container_resources():
                     'checked_at': datetime.now().isoformat(),
                     'alerts_sent': alerts_sent
                 }
-                
+
             except Exception as e:
                 logger.exception('Error checking container %s: %s', container.name, e)
-                
+
     except Exception as e:
         logger.exception('Error in resource monitoring: %s', e)
 
@@ -259,18 +259,18 @@ def check_container_states():
     from services.docker_service import get_docker_client
     from services.notification_service import send_container_alert
     from models import WebhookConfig
-    
+
     global _last_check
-    
+
     client = get_docker_client()
     if not client:
         return
-    
+
     try:
         # Get all containers including stopped
         containers = client.containers.list(all=True)
         webhooks = WebhookConfig.query.filter_by(enabled=True).all()
-        
+
         current_states = {}
         for container in containers:
             current_states[container.id] = {
@@ -278,13 +278,13 @@ def check_container_states():
                 'status': container.status,
                 'health': container.attrs.get('State', {}).get('Health', {}).get('Status')
             }
-        
+
         # Check for state changes
         previous_states = _last_check.get('_container_states', {})
-        
+
         for container_id, current in current_states.items():
             previous = previous_states.get(container_id)
-            
+
             if previous:
                 # Check if container stopped
                 if previous['status'] == 'running' and current['status'] != 'running':
@@ -292,24 +292,24 @@ def check_container_states():
                         webhooks, current['name'], 'stopped',
                         {'Previous Status': previous['status'], 'Current Status': current['status']}
                     )
-                
+
                 # Check if container started
                 elif previous['status'] != 'running' and current['status'] == 'running':
                     send_container_alert(
                         webhooks, current['name'], 'started',
                         {'Previous Status': previous['status'], 'Current Status': current['status']}
                     )
-                
+
                 # Check health status changes
                 if previous.get('health') == 'healthy' and current.get('health') == 'unhealthy':
                     send_container_alert(
                         webhooks, current['name'], 'unhealthy',
                         {'Health Status': current['health']}
                     )
-        
+
         _last_check['_container_states'] = current_states
         _last_check['_states_checked_at'] = datetime.now().isoformat()
-        
+
     except Exception as e:
         logger.exception('Error in state monitoring: %s', e)
 
@@ -333,12 +333,12 @@ def _mark_alert_sent(alert_key: str):
 def update_thresholds(cpu: Optional[float] = None, memory: Optional[float] = None):
     """Update monitoring thresholds."""
     global CPU_THRESHOLD, MEMORY_THRESHOLD
-    
+
     if cpu is not None:
         CPU_THRESHOLD = max(0, min(100, cpu))
     if memory is not None:
         MEMORY_THRESHOLD = max(0, min(100, memory))
-    
+
     return {
         'success': True,
         'cpu_threshold': CPU_THRESHOLD,

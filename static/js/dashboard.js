@@ -2,6 +2,16 @@
    DockDash - Dashboard Page JavaScript
    ============================================================================= */
 
+// Scope every dashboard API request to the selected Docker endpoint.
+const _dockdashNativeFetch = window.fetch.bind(window);
+window.fetch = function(input, init) {
+    const endpointId = document.querySelector('.dashboard')?.dataset.endpointId;
+    if (endpointId && typeof input === 'string' && input.startsWith('/api/') && !input.includes('endpoint_id=')) {
+        input += `${input.includes('?') ? '&' : '?'}endpoint_id=${encodeURIComponent(endpointId)}`;
+    }
+    return _dockdashNativeFetch(input, init);
+};
+
 // =============================================================================
 // State Management
 // =============================================================================
@@ -104,12 +114,12 @@ document.addEventListener('DOMContentLoaded', function() {
             id: card.dataset.id
         });
     });
-    
+
     // Restore saved preferences
     const savedView = localStorage.getItem('dockdash-view');
     const savedPageSize = localStorage.getItem('dockdash-pageSize');
     const savedSort = localStorage.getItem('dockdash-sort');
-    
+
     if (savedView === 'table') {
         setView('table');
     }
@@ -123,10 +133,10 @@ document.addEventListener('DOMContentLoaded', function() {
         sortDirection = dir;
         document.getElementById('sortSelect').value = savedSort;
     }
-    
+
     // Restore saved filter state from sessionStorage
     restoreFilterState();
-    
+
     // Initial render
     filteredContainers = [...allContainers];
     applySort();
@@ -134,11 +144,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Probe visible links to upgrade http -> https where appropriate
     scheduleProbeVisibleLinks();
-    
+
     // Setup search input
     const searchInput = document.getElementById('searchInput');
     const searchShortcut = document.querySelector('.search-shortcut');
-    
+
     searchInput.addEventListener('input', debounce(function() {
         searchTerm = this.value.toLowerCase().trim();
         document.getElementById('searchClear').style.display = searchTerm ? 'block' : 'none';
@@ -147,7 +157,7 @@ document.addEventListener('DOMContentLoaded', function() {
         filterContainers();
         renderContainers();
     }, 200));
-    
+
     // Hide shortcut when focused
     searchInput.addEventListener('focus', function() {
         if (searchShortcut) searchShortcut.style.display = 'none';
@@ -155,7 +165,7 @@ document.addEventListener('DOMContentLoaded', function() {
     searchInput.addEventListener('blur', function() {
         if (searchShortcut && !this.value) searchShortcut.style.display = '';
     });
-    
+
     // Keyboard shortcut for search
     document.addEventListener('keydown', function(e) {
         if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
@@ -167,7 +177,7 @@ document.addEventListener('DOMContentLoaded', function() {
             searchInput.blur();
         }
     });
-    
+
     // Stopped containers filter (loads stopped containers when enabled)
     const stoppedFilter = document.getElementById('filterStopped');
     const dashboardEl = document.querySelector('.dashboard');
@@ -189,7 +199,7 @@ document.addEventListener('DOMContentLoaded', function() {
             applyFilters();
         }
     }
-    
+
     // Logs follow checkbox
     document.addEventListener('change', function(e) {
         if (e.target && e.target.id === 'logsFollow') {
@@ -208,7 +218,7 @@ function setView(view) {
     const tableView = document.getElementById('containerTable');
     const cardBtn = document.getElementById('cardViewBtn');
     const tableBtn = document.getElementById('tableViewBtn');
-    
+
     if (view === 'table') {
         cardView.style.display = 'none';
         tableView.style.display = 'block';
@@ -242,8 +252,8 @@ function filterContainers() {
     if (!searchTerm) {
         filteredContainers = [...allContainers];
     } else {
-        filteredContainers = allContainers.filter(c => 
-            c.name.includes(searchTerm) || 
+        filteredContainers = allContainers.filter(c =>
+            c.name.includes(searchTerm) ||
             c.image.includes(searchTerm) ||
             c.status.includes(searchTerm) ||
             c.id.includes(searchTerm)
@@ -273,7 +283,7 @@ function sortByColumn(field) {
         sortField = field;
         sortDirection = 'asc';
     }
-    
+
     // Update dropdown
     const sortValue = `${field}-${sortDirection}`;
     const select = document.getElementById('sortSelect');
@@ -281,7 +291,7 @@ function sortByColumn(field) {
     if (option) {
         select.value = sortValue;
     }
-    
+
     localStorage.setItem('dockdash-sort', sortValue);
     applySort();
     renderContainers();
@@ -291,7 +301,7 @@ function sortByColumn(field) {
 function applySort() {
     filteredContainers.sort((a, b) => {
         let valA, valB;
-        
+
         if (sortField === 'status') {
             // Custom sort: running first or last
             const statusOrder = { 'running': 0, 'paused': 1, 'exited': 2, 'stopped': 2 };
@@ -304,7 +314,7 @@ function applySort() {
             valA = a[sortField] || '';
             valB = b[sortField] || '';
         }
-        
+
         if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
         if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
         return 0;
@@ -316,7 +326,7 @@ function updateSortIcons() {
         icon.textContent = '↕';
         icon.classList.remove('active');
     });
-    
+
     const activeIcon = document.getElementById(`sort-${sortField}`);
     if (activeIcon) {
         activeIcon.textContent = sortDirection === 'asc' ? '↑' : '↓';
@@ -361,50 +371,50 @@ function renderContainers() {
     const pagedContainers = getPagedContainers();
     const totalPages = getTotalPages();
     const total = filteredContainers.length;
-    
+
     // Update pagination info
     const start = total === 0 ? 0 : (currentPage - 1) * (pageSize === 'all' ? total : pageSize) + 1;
     const end = pageSize === 'all' ? total : Math.min(currentPage * pageSize, total);
-    
+
     document.getElementById('showingStart').textContent = start;
     document.getElementById('showingEnd').textContent = end;
     document.getElementById('totalFiltered').textContent = total;
     document.getElementById('currentPage').textContent = currentPage;
     document.getElementById('totalPages').textContent = totalPages;
-    
+
     const currentPageBottom = document.getElementById('currentPageBottom');
     const totalPagesBottom = document.getElementById('totalPagesBottom');
     if (currentPageBottom) currentPageBottom.textContent = currentPage;
     if (totalPagesBottom) totalPagesBottom.textContent = totalPages;
-    
+
     // Update button states
     const prevDisabled = currentPage <= 1;
     const nextDisabled = currentPage >= totalPages;
     document.getElementById('prevPage').disabled = prevDisabled;
     document.getElementById('nextPage').disabled = nextDisabled;
-    
+
     const prevPageBottom = document.getElementById('prevPageBottom');
     const nextPageBottom = document.getElementById('nextPageBottom');
     if (prevPageBottom) prevPageBottom.disabled = prevDisabled;
     if (nextPageBottom) nextPageBottom.disabled = nextDisabled;
-    
+
     // Show/hide pagination if not needed
     const paginationNeeded = totalPages > 1;
     document.getElementById('paginationControls').style.visibility = paginationNeeded ? 'visible' : 'hidden';
-    
+
     const bottomPagination = document.getElementById('bottomPagination');
     if (bottomPagination) bottomPagination.style.display = paginationNeeded ? 'flex' : 'none';
-    
+
     // Get set of visible container IDs
     const visibleIds = new Set(pagedContainers.map(c => c.id));
-    
+
     // Render card view
     const cardGrid = document.getElementById('containerGrid');
     const cards = cardGrid.querySelectorAll('.container-card[data-id]');
     cards.forEach(card => {
         card.style.display = visibleIds.has(card.dataset.id) ? '' : 'none';
     });
-    
+
     // Render table view
     const tableBody = document.getElementById('tableBody');
     if (tableBody) {
@@ -413,19 +423,19 @@ function renderContainers() {
             row.style.display = visibleIds.has(row.dataset.id) ? '' : 'none';
         });
     }
-    
+
     // Show/hide empty states
     const hasResults = pagedContainers.length > 0;
     const hasContainers = allContainers.length > 0;
-    
+
     document.getElementById('emptyState').style.display = (!hasContainers && !searchTerm) ? 'flex' : 'none';
     document.getElementById('noResultsState').style.display = (!hasResults && searchTerm) ? 'flex' : 'none';
-    
+
     const tableNoResults = document.getElementById('tableNoResults');
     if (tableNoResults) {
         tableNoResults.style.display = (!hasResults && searchTerm) ? 'flex' : 'none';
     }
-    
+
     // Reorder DOM elements to match sort order
     if (currentView === 'card') {
         pagedContainers.forEach(c => {
@@ -438,7 +448,7 @@ function renderContainers() {
             if (row) tableBody.appendChild(row);
         });
     }
-    
+
     updateSortIcons();
 
     // Probe visible links after pagination/filtering changes
@@ -633,13 +643,13 @@ async function copyLogs() {
 
 async function restartContainer(id, name) {
     if (!confirmAction(`Restart container "${name}"?\n\nThe container will briefly stop and start again.`)) return;
-    
+
     showToast('info', `Restarting ${name}...`);
-    
+
     try {
         const response = await fetch(`/api/container/${id}/restart`, { method: 'POST', headers: csrfHeaders() });
         const data = await response.json();
-        
+
         if (data.success) {
             showToast('success', data.message);
             await waitForContainerStatus(id, ['running'], 8000);
@@ -654,13 +664,13 @@ async function restartContainer(id, name) {
 
 async function stopContainer(id, name) {
     if (!confirmAction(`Stop container "${name}"?\n\nThe container will be gracefully stopped.`)) return;
-    
+
     showToast('info', `Stopping ${name}...`);
-    
+
     try {
         const response = await fetch(`/api/container/${id}/stop`, { method: 'POST', headers: csrfHeaders() });
         const data = await response.json();
-        
+
         if (data.success) {
             showToast('success', data.message);
             await waitForContainerStatus(id, ['exited', 'stopped'], 8000);
@@ -675,11 +685,11 @@ async function stopContainer(id, name) {
 
 async function startContainer(id, name) {
     showToast('info', `Starting ${name}...`);
-    
+
     try {
         const response = await fetch(`/api/container/${id}/start`, { method: 'POST', headers: csrfHeaders() });
         const data = await response.json();
-        
+
         if (data.success) {
             showToast('success', data.message);
             await waitForContainerStatus(id, ['running'], 8000);
@@ -694,17 +704,17 @@ async function startContainer(id, name) {
 
 async function removeContainer(id, name) {
     if (!confirmAction(`⚠️ DELETE container "${name}"?\n\nThis will permanently remove the container.\nVolumes and data may be lost. This cannot be undone.`, 'danger')) return;
-    
+
     showToast('info', `Removing ${name}...`);
-    
+
     try {
-        const response = await fetch(`/api/container/${id}/remove`, { 
-            method: 'POST', 
+        const response = await fetch(`/api/container/${id}/remove`, {
+            method: 'POST',
             headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
             body: JSON.stringify({ force: false })
         });
         const data = await response.json();
-        
+
         if (data.success) {
             showToast('success', data.message);
             location.reload();
@@ -718,17 +728,17 @@ async function removeContainer(id, name) {
 
 async function recreateContainer(id, name) {
     if (!confirmAction(`Recreate container "${name}"?\n\nThis will:\n• Pull the latest image\n• Stop and remove the current container\n• Create a new container with the same config\n• Rescan for vulnerabilities`)) return;
-    
+
     showToast('info', `Recreating ${name}... This may take a moment.`, 5000);
-    
+
     try {
-        const response = await fetch(`/api/container/${id}/recreate`, { 
-            method: 'POST', 
+        const response = await fetch(`/api/container/${id}/recreate`, {
+            method: 'POST',
             headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
             body: JSON.stringify({ pull_latest: true })
         });
         const data = await response.json();
-        
+
         if (data.success) {
             let msg = data.message;
             if (data.pulled_new_image) {
@@ -783,7 +793,7 @@ async function loadStoredUpdates() {
     try {
         const response = await fetch('/api/updates/status');
         const data = await response.json();
-        
+
         if (data.success && data.updates) {
             imageUpdateCache = data.updates;
             displayImageUpdates(data.updates);
@@ -798,7 +808,7 @@ async function checkAllImageUpdates() {
     const originalText = btn.innerHTML;
     btn.innerHTML = '<span class="loading-spinner"></span> Checking...';
     btn.disabled = true;
-    
+
     // Collect all unique images from containers
     const imageSet = new Set();
     document.querySelectorAll('[data-image-full]').forEach(el => {
@@ -807,16 +817,16 @@ async function checkAllImageUpdates() {
             imageSet.add(img);
         }
     });
-    
+
     const images = Array.from(imageSet);
-    
+
     if (images.length === 0) {
         showToast('info', 'No images to check');
         btn.innerHTML = originalText;
         btn.disabled = false;
         return;
     }
-    
+
     try {
         const response = await fetch('/api/images/check-updates', {
             method: 'POST',
@@ -826,9 +836,9 @@ async function checkAllImageUpdates() {
             },
             body: JSON.stringify({ images })
         });
-        
+
         const data = await response.json();
-        
+
         if (data.success) {
             imageUpdateCache = data.results;
             displayImageUpdates(data.results);
@@ -847,21 +857,21 @@ async function checkAllImageUpdates() {
 function displayImageUpdates(results) {
     let updateCount = 0;
     const containersWithUpdates = new Set();
-    
+
     // Update all badges in card view and set data attributes
     document.querySelectorAll('.container-card').forEach(card => {
         const image = card.dataset.imageFull;
         const result = results[image];
         const hasUpdate = result && result.has_update === true;
-        
+
         // Set data attribute for filtering
         card.dataset.hasUpdate = hasUpdate ? 'true' : 'false';
-        
+
         if (hasUpdate) {
             updateCount++;
             containersWithUpdates.add(card.dataset.id);
         }
-        
+
         // Update badge
         const badge = card.querySelector('.update-badge');
         if (badge) {
@@ -872,14 +882,14 @@ function displayImageUpdates(results) {
                 badge.style.display = 'none';
             }
         }
-        
+
         // Show/hide the Update button
         const updateBtn = card.querySelector('.update-container-btn');
         if (updateBtn) {
             updateBtn.style.display = hasUpdate ? 'inline-flex' : 'none';
         }
     });
-    
+
     // Update image row icons in card view
     document.querySelectorAll('.container-card .image-value').forEach(span => {
         const image = span.dataset.image;
@@ -904,15 +914,15 @@ function displayImageUpdates(results) {
             }
         }
     });
-    
+
     // Update table view - set data attributes and badges
     document.querySelectorAll('#tableBody tr').forEach(row => {
         const image = row.dataset.imageFull;
         const result = results[image];
         const hasUpdate = result && result.has_update === true;
-        
+
         row.dataset.hasUpdate = hasUpdate ? 'true' : 'false';
-        
+
         const badge = row.querySelector('.update-badge');
         if (badge) {
             if (hasUpdate) {
@@ -923,7 +933,7 @@ function displayImageUpdates(results) {
             }
         }
     });
-    
+
     // Update header count
     const countContainer = document.getElementById('updateCount');
     const countValue = document.getElementById('updateCountValue');
@@ -935,7 +945,7 @@ function displayImageUpdates(results) {
             countContainer.style.display = 'none';
         }
     }
-    
+
     // Show/hide Update All button
     const updateAllBtn = document.getElementById('updateAllBtn');
     const updateAllCount = document.getElementById('updateAllCount');
@@ -947,7 +957,7 @@ function displayImageUpdates(results) {
             updateAllBtn.style.display = 'none';
         }
     }
-    
+
     // Only show toast if this was a fresh check (not loaded from storage)
     if (Object.keys(results).length > 0 && document.getElementById('checkUpdatesBtn')?.disabled === false) {
         if (updateCount > 0) {
@@ -963,7 +973,7 @@ async function checkSingleImageUpdate(image) {
     if (imageUpdateCache[image]) {
         return imageUpdateCache[image];
     }
-    
+
     try {
         const response = await fetch(`/api/image/check-update?image=${encodeURIComponent(image)}`);
         const data = await response.json();
@@ -982,7 +992,7 @@ async function checkSingleImageUpdate(image) {
 async function toggleStats(containerId) {
     const statsDiv = document.getElementById(`stats-${containerId}`);
     if (!statsDiv) return;
-    
+
     if (statsDiv.style.display === 'none') {
         statsDiv.style.display = 'block';
         await refreshStats(containerId);
@@ -994,18 +1004,18 @@ async function toggleStats(containerId) {
 async function refreshStats(containerId) {
     const statsDiv = document.getElementById(`stats-${containerId}`);
     if (!statsDiv) return;
-    
+
     try {
         const response = await fetch(`/api/container/${containerId}/stats`);
         const data = await response.json();
-        
+
         if (data.success) {
             const stats = data.stats;
             statsDiv.querySelector('.cpu-stat').textContent = `${stats.cpu_percent}%`;
             statsDiv.querySelector('.mem-stat').textContent = `${stats.memory_usage_human} / ${stats.memory_limit_human}`;
             statsDiv.querySelector('.cpu-fill').style.width = `${Math.min(stats.cpu_percent, 100)}%`;
             statsDiv.querySelector('.mem-fill').style.width = `${stats.memory_percent}%`;
-            
+
             // Color coding
             statsDiv.querySelector('.cpu-fill').className = `stat-fill cpu-fill ${stats.cpu_percent > 80 ? 'high' : stats.cpu_percent > 50 ? 'medium' : ''}`;
             statsDiv.querySelector('.mem-fill').className = `stat-fill mem-fill ${stats.memory_percent > 80 ? 'high' : stats.memory_percent > 50 ? 'medium' : ''}`;
@@ -1039,18 +1049,18 @@ function closeExec(e) {
 
 async function runExec() {
     if (!currentExecContainer) return;
-    
+
     const command = document.getElementById('execCommand').value.trim();
     const workdir = document.getElementById('execWorkdir').value.trim();
-    
+
     if (!command) {
         showToast('error', 'Command is required');
         return;
     }
-    
+
     const output = document.getElementById('execOutput');
     output.textContent = 'Running...';
-    
+
     try {
         const response = await fetch(`/api/container/${currentExecContainer}/exec`, {
             method: 'POST',
@@ -1058,7 +1068,7 @@ async function runExec() {
             body: JSON.stringify({ command, workdir: workdir || undefined })
         });
         const data = await response.json();
-        
+
         if (data.success) {
             let result = '';
             if (data.stdout) result += data.stdout;
@@ -1085,11 +1095,11 @@ async function openInspect(containerId, containerName) {
     document.getElementById('inspectTitle').textContent = `🔍 ${containerName}`;
     document.getElementById('inspectTabContent').innerHTML = '<p>Loading...</p>';
     document.getElementById('inspectModal').style.display = 'flex';
-    
+
     try {
         const response = await fetch(`/api/container/${containerId}`);
         const data = await response.json();
-        
+
         if (data.success) {
             currentInspectData = data.container;
             showInspectTab('env');
@@ -1110,10 +1120,10 @@ function closeInspect(e) {
 function showInspectTab(tab) {
     document.querySelectorAll('.inspect-tabs .tab-btn').forEach(btn => btn.classList.remove('active'));
     if (event && event.target) event.target.classList.add('active');
-    
+
     const content = document.getElementById('inspectTabContent');
     if (!currentInspectData) return;
-    
+
     let html = '';
     switch (tab) {
         case 'env':
@@ -1163,15 +1173,15 @@ async function scanAllVulnerabilities() {
         showToast('info', 'Scan already in progress...');
         return;
     }
-    
+
     const btn = document.getElementById('scanVulnBtn');
     const originalText = btn.innerHTML;
     btn.innerHTML = '⏳ Scanning...';
     btn.disabled = true;
     vulnScanInProgress = true;
-    
+
     showToast('info', 'Starting vulnerability scan for all container images...');
-    
+
     try {
         const response = await fetch('/api/vulnerabilities/scan-all', {
             method: 'POST',
@@ -1179,12 +1189,12 @@ async function scanAllVulnerabilities() {
             body: JSON.stringify({})
         });
         const data = await response.json();
-        
+
         if (data.success) {
             const summary = data.total_summary || {};
             showToast('success', `Scan complete! ${data.images_scanned} images scanned. ` +
                 `${summary.critical || 0} Critical, ${summary.high || 0} High vulnerabilities found.`);
-            
+
             // Reload to show updated vulnerability badges
             setTimeout(() => location.reload(), 1500);
         } else {
@@ -1211,24 +1221,24 @@ async function showVulnerabilities(imageRef, containerName) {
     const title = document.getElementById('vulnModalTitle');
     const summaryBar = document.getElementById('vulnSummaryBar');
     const tableBody = document.getElementById('vulnTableBody');
-    
+
     title.textContent = `🛡️ Security Issues: ${containerName}`;
     summaryBar.innerHTML = '<div class="loading">Loading vulnerability data...</div>';
     tableBody.innerHTML = '';
     modal.style.display = 'flex';
-    
+
     try {
         const response = await fetch(`/api/vulnerabilities/details/${encodeURIComponent(imageRef)}`);
         const data = await response.json();
-        
+
         if (!data.success) {
             summaryBar.innerHTML = `<div class="error-msg">${data.error || 'Failed to load data'}</div>`;
             return;
         }
-        
+
         currentVulnData = data.vulnerabilities || [];
         const summary = data.summary || {};
-        
+
         // Render summary bar
         summaryBar.innerHTML = `
             <div class="vuln-stat stat-critical">🔴 Critical: ${summary.critical || 0}</div>
@@ -1243,10 +1253,10 @@ async function showVulnerabilities(imageRef, containerName) {
                 🕐 Scanned: ${data.scanned_at ? new Date(data.scanned_at).toLocaleString() : 'N/A'}
             </div>
         `;
-        
+
         // Render table
         filterVulnTable();
-        
+
     } catch (error) {
         console.error('Error loading vulnerabilities:', error);
         summaryBar.innerHTML = '<div class="error-msg">Failed to load vulnerability data</div>';
@@ -1259,36 +1269,36 @@ function filterVulnTable() {
     const showMedium = document.getElementById('vulnFilterMedium')?.checked ?? false;
     const showLow = document.getElementById('vulnFilterLow')?.checked ?? false;
     const searchTerm = (document.getElementById('vulnSearch')?.value || '').toLowerCase();
-    
+
     const filtered = currentVulnData.filter(vuln => {
         const severity = (vuln.severity || '').toUpperCase();
-        const matchesSeverity = 
+        const matchesSeverity =
             (severity === 'CRITICAL' && showCritical) ||
             (severity === 'HIGH' && showHigh) ||
             (severity === 'MEDIUM' && showMedium) ||
             (severity === 'LOW' && showLow);
-        
+
         if (!matchesSeverity) return false;
-        
+
         if (searchTerm) {
             const searchable = `${vuln.id} ${vuln.package} ${vuln.title} ${vuln.description}`.toLowerCase();
             if (!searchable.includes(searchTerm)) return false;
         }
-        
+
         return true;
     });
-    
+
     const tableBody = document.getElementById('vulnTableBody');
     const emptyMsg = document.getElementById('vulnEmpty');
-    
+
     if (filtered.length === 0) {
         tableBody.innerHTML = '';
         emptyMsg.style.display = 'block';
         return;
     }
-    
+
     emptyMsg.style.display = 'none';
-    
+
     // Sort by severity
     const severityOrder = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3, UNKNOWN: 4 };
     filtered.sort((a, b) => {
@@ -1296,16 +1306,16 @@ function filterVulnTable() {
         const bOrder = severityOrder[b.severity?.toUpperCase()] ?? 5;
         return aOrder - bOrder;
     });
-    
+
     tableBody.innerHTML = filtered.map(vuln => {
         const severity = (vuln.severity || 'UNKNOWN').toUpperCase();
-        const cveLink = vuln.id?.startsWith('CVE-') 
+        const cveLink = vuln.id?.startsWith('CVE-')
             ? `<a href="https://nvd.nist.gov/vuln/detail/${vuln.id}" target="_blank" rel="noopener">${vuln.id}</a>`
             : escapeHtml(vuln.id || 'N/A');
-        const fixedVersion = vuln.fixed_version 
+        const fixedVersion = vuln.fixed_version
             ? `<span class="fixed-version">${escapeHtml(vuln.fixed_version)}</span>`
             : '<span class="no-fix">No fix</span>';
-        
+
         return `
             <tr>
                 <td class="severity-cell severity-${severity}">${severity}</td>
@@ -1346,21 +1356,21 @@ function restoreFilterState() {
         const saved = sessionStorage.getItem('dockdash-filters');
         if (!saved) return;
         const state = JSON.parse(saved);
-        
+
         const hasUpdateEl = document.getElementById('filterHasUpdate');
         const hasVulnEl = document.getElementById('filterHasVuln');
         const criticalEl = document.getElementById('filterCritical');
         const highEl = document.getElementById('filterHigh');
         const mediumEl = document.getElementById('filterMedium');
         const lowEl = document.getElementById('filterLow');
-        
+
         if (hasUpdateEl && state.hasUpdate) hasUpdateEl.checked = true;
         if (hasVulnEl && state.hasVuln) hasVulnEl.checked = true;
         if (criticalEl) criticalEl.checked = state.filterCritical ?? true;
         if (highEl) highEl.checked = state.filterHigh ?? true;
         if (mediumEl) mediumEl.checked = state.filterMedium ?? false;
         if (lowEl) lowEl.checked = state.filterLow ?? false;
-        
+
         // Apply restored filters
         if (state.hasUpdate || state.hasVuln) {
             applyFilters();
@@ -1374,34 +1384,34 @@ function applyFilters() {
     const hasUpdateFilter = document.getElementById('filterHasUpdate')?.checked || false;
     const hasVulnFilter = document.getElementById('filterHasVuln')?.checked || false;
     const stoppedOnly = document.getElementById('filterStopped')?.checked || false;
-    
+
     // Save filter state for persistence across refresh
     saveFilterState();
     const showCritical = document.getElementById('filterCritical')?.checked ?? true;
     const showHigh = document.getElementById('filterHigh')?.checked ?? true;
     const showMedium = document.getElementById('filterMedium')?.checked ?? false;
     const showLow = document.getElementById('filterLow')?.checked ?? false;
-    
+
     // Show/hide severity filters when vuln filter is active
     const severityFilters = document.getElementById('severityFilters');
     if (severityFilters) {
         severityFilters.style.display = hasVulnFilter ? 'flex' : 'none';
     }
-    
+
     // Show/hide clear button
     const clearBtn = document.getElementById('clearFiltersBtn');
     if (clearBtn) {
         clearBtn.style.display = (hasUpdateFilter || hasVulnFilter || stoppedOnly) ? 'inline-block' : 'none';
     }
-    
+
     const cards = document.querySelectorAll('.container-card');
     const rows = document.querySelectorAll('#tableBody tr');
-    
+
     let visibleCount = 0;
-    
+
     cards.forEach(card => {
         let show = true;
-        
+
         // Check stopped-only filter
         if (stoppedOnly) {
             const status = card.dataset.status;
@@ -1413,31 +1423,31 @@ function applyFilters() {
             const hasUpdate = card.dataset.hasUpdate === 'true';
             if (!hasUpdate) show = false;
         }
-        
+
         // Check vulnerability filter
         if (hasVulnFilter && show) {
             const critical = parseInt(card.dataset.vulnCritical || 0);
             const high = parseInt(card.dataset.vulnHigh || 0);
             const medium = parseInt(card.dataset.vulnMedium || 0);
             const low = parseInt(card.dataset.vulnLow || 0);
-            
-            const hasMatchingVuln = 
+
+            const hasMatchingVuln =
                 (showCritical && critical > 0) ||
                 (showHigh && high > 0) ||
                 (showMedium && medium > 0) ||
                 (showLow && low > 0);
-            
+
             if (!hasMatchingVuln) show = false;
         }
-        
+
         card.style.display = show ? '' : 'none';
         if (show) visibleCount++;
     });
-    
+
     // Apply same logic to table rows
     rows.forEach(row => {
         let show = true;
-        
+
         if (stoppedOnly) {
             const status = row.dataset.status;
             if (status === 'running') show = false;
@@ -1447,28 +1457,28 @@ function applyFilters() {
             const hasUpdate = row.dataset.hasUpdate === 'true';
             if (!hasUpdate) show = false;
         }
-        
+
         if (hasVulnFilter && show) {
             const critical = parseInt(row.dataset.vulnCritical || 0);
             const high = parseInt(row.dataset.vulnHigh || 0);
             const medium = parseInt(row.dataset.vulnMedium || 0);
             const low = parseInt(row.dataset.vulnLow || 0);
-            
-            const hasMatchingVuln = 
+
+            const hasMatchingVuln =
                 (showCritical && critical > 0) ||
                 (showHigh && high > 0) ||
                 (showMedium && medium > 0) ||
                 (showLow && low > 0);
-            
+
             if (!hasMatchingVuln) show = false;
         }
-        
+
         row.style.display = show ? '' : 'none';
     });
-    
+
     // Update count
     document.getElementById('totalFiltered').textContent = visibleCount;
-    
+
     // Show/hide no results message
     const noResults = document.getElementById('noResultsState');
     if (noResults) {
@@ -1535,24 +1545,24 @@ function restoreCollapsedGroups() {
 async function startComposeProject(project) {
     const containers = getContainersByProject(project);
     const stoppedContainers = containers.filter(c => c.status !== 'running');
-    
+
     if (stoppedContainers.length === 0) {
         showToast('info', `All containers in ${project} are already running`);
         return;
     }
-    
+
     if (!confirm(`Start ${stoppedContainers.length} stopped container(s) in "${project}"?`)) return;
-    
+
     showToast('info', `Starting ${stoppedContainers.length} container(s)...`);
-    
+
     let success = 0;
     let failed = 0;
-    
+
     for (const c of stoppedContainers) {
         try {
-            const response = await fetch(`/api/container/${c.id}/start`, { 
-                method: 'POST', 
-                headers: csrfHeaders() 
+            const response = await fetch(`/api/container/${c.id}/start`, {
+                method: 'POST',
+                headers: csrfHeaders()
             });
             const data = await response.json();
             if (data.success) success++;
@@ -1561,34 +1571,34 @@ async function startComposeProject(project) {
             failed++;
         }
     }
-    
+
     if (success > 0) showToast('success', `Started ${success} container(s)`);
     if (failed > 0) showToast('error', `Failed to start ${failed} container(s)`);
-    
+
     setTimeout(() => location.reload(), 1000);
 }
 
 async function stopComposeProject(project) {
     const containers = getContainersByProject(project);
     const runningContainers = containers.filter(c => c.status === 'running');
-    
+
     if (runningContainers.length === 0) {
         showToast('info', `All containers in ${project} are already stopped`);
         return;
     }
-    
+
     if (!confirm(`Stop ${runningContainers.length} running container(s) in "${project}"?`)) return;
-    
+
     showToast('info', `Stopping ${runningContainers.length} container(s)...`);
-    
+
     let success = 0;
     let failed = 0;
-    
+
     for (const c of runningContainers) {
         try {
-            const response = await fetch(`/api/container/${c.id}/stop`, { 
-                method: 'POST', 
-                headers: csrfHeaders() 
+            const response = await fetch(`/api/container/${c.id}/stop`, {
+                method: 'POST',
+                headers: csrfHeaders()
             });
             const data = await response.json();
             if (data.success) success++;
@@ -1597,34 +1607,34 @@ async function stopComposeProject(project) {
             failed++;
         }
     }
-    
+
     if (success > 0) showToast('success', `Stopped ${success} container(s)`);
     if (failed > 0) showToast('error', `Failed to stop ${failed} container(s)`);
-    
+
     setTimeout(() => location.reload(), 1000);
 }
 
 async function restartComposeProject(project) {
     const containers = getContainersByProject(project);
     const runningContainers = containers.filter(c => c.status === 'running');
-    
+
     if (runningContainers.length === 0) {
         showToast('info', `No running containers in ${project} to restart`);
         return;
     }
-    
+
     if (!confirm(`Restart ${runningContainers.length} container(s) in "${project}"?`)) return;
-    
+
     showToast('info', `Restarting ${runningContainers.length} container(s)...`);
-    
+
     let success = 0;
     let failed = 0;
-    
+
     for (const c of runningContainers) {
         try {
-            const response = await fetch(`/api/container/${c.id}/restart`, { 
-                method: 'POST', 
-                headers: csrfHeaders() 
+            const response = await fetch(`/api/container/${c.id}/restart`, {
+                method: 'POST',
+                headers: csrfHeaders()
             });
             const data = await response.json();
             if (data.success) success++;
@@ -1633,10 +1643,10 @@ async function restartComposeProject(project) {
             failed++;
         }
     }
-    
+
     if (success > 0) showToast('success', `Restarted ${success} container(s)`);
     if (failed > 0) showToast('error', `Failed to restart ${failed} container(s)`);
-    
+
     setTimeout(() => location.reload(), 1000);
 }
 
@@ -1658,14 +1668,14 @@ function updateBulkSelection() {
     const count = checkboxes.length;
     const bulkBar = document.getElementById('bulkActionsBar');
     const countSpan = document.getElementById('selectedCount');
-    
+
     if (count > 0) {
         bulkBar.style.display = 'flex';
         countSpan.textContent = count;
     } else {
         bulkBar.style.display = 'none';
     }
-    
+
     // Update card visual selection
     document.querySelectorAll('.container-card').forEach(card => {
         const checkbox = card.querySelector('.container-checkbox');
@@ -1673,13 +1683,13 @@ function updateBulkSelection() {
             card.classList.toggle('selected', checkbox.checked);
         }
     });
-    
+
     // Sync "select all" checkboxes
     const allCheckboxes = document.querySelectorAll('.container-checkbox');
     const selectAllCheckbox = document.getElementById('selectAllCheckbox');
     const tableSelectAll = document.getElementById('tableSelectAll');
     const allChecked = allCheckboxes.length > 0 && checkboxes.length === allCheckboxes.length;
-    
+
     if (selectAllCheckbox) selectAllCheckbox.checked = allChecked;
     if (tableSelectAll) tableSelectAll.checked = allChecked;
 }
@@ -1688,16 +1698,16 @@ function toggleSelectAll() {
     const selectAllCheckbox = document.getElementById('selectAllCheckbox');
     const tableSelectAll = document.getElementById('tableSelectAll');
     const isChecked = selectAllCheckbox?.checked || tableSelectAll?.checked || false;
-    
+
     // Sync both select all checkboxes
     if (selectAllCheckbox) selectAllCheckbox.checked = isChecked;
     if (tableSelectAll) tableSelectAll.checked = isChecked;
-    
+
     // Toggle all individual checkboxes
     document.querySelectorAll('.container-checkbox').forEach(cb => {
         cb.checked = isChecked;
     });
-    
+
     updateBulkSelection();
 }
 
@@ -1722,17 +1732,17 @@ function getSelectedContainers() {
 
 async function bulkStartContainers() {
     const containers = getSelectedContainers().filter(c => c.status !== 'running');
-    
+
     if (containers.length === 0) {
         showToast('info', 'No stopped containers selected');
         return;
     }
-    
+
     const names = containers.map(c => c.name).join(', ');
     if (!confirm(`Start ${containers.length} container(s)?\n\n${names}`)) return;
-    
+
     showToast('info', `Starting ${containers.length} container(s)...`);
-    
+
     let success = 0, failed = 0;
     for (const c of containers) {
         try {
@@ -1742,26 +1752,26 @@ async function bulkStartContainers() {
             else failed++;
         } catch (e) { failed++; }
     }
-    
+
     if (success > 0) showToast('success', `Started ${success} container(s)`);
     if (failed > 0) showToast('error', `Failed to start ${failed} container(s)`);
-    
+
     setTimeout(() => location.reload(), 1000);
 }
 
 async function bulkStopContainers() {
     const containers = getSelectedContainers().filter(c => c.status === 'running');
-    
+
     if (containers.length === 0) {
         showToast('info', 'No running containers selected');
         return;
     }
-    
+
     const names = containers.map(c => c.name).join(', ');
     if (!confirm(`Stop ${containers.length} container(s)?\n\n${names}`)) return;
-    
+
     showToast('info', `Stopping ${containers.length} container(s)...`);
-    
+
     let success = 0, failed = 0;
     for (const c of containers) {
         try {
@@ -1771,26 +1781,26 @@ async function bulkStopContainers() {
             else failed++;
         } catch (e) { failed++; }
     }
-    
+
     if (success > 0) showToast('success', `Stopped ${success} container(s)`);
     if (failed > 0) showToast('error', `Failed to stop ${failed} container(s)`);
-    
+
     setTimeout(() => location.reload(), 1000);
 }
 
 async function bulkRestartContainers() {
     const containers = getSelectedContainers().filter(c => c.status === 'running');
-    
+
     if (containers.length === 0) {
         showToast('info', 'No running containers selected');
         return;
     }
-    
+
     const names = containers.map(c => c.name).join(', ');
     if (!confirm(`Restart ${containers.length} container(s)?\n\n${names}`)) return;
-    
+
     showToast('info', `Restarting ${containers.length} container(s)...`);
-    
+
     let success = 0, failed = 0;
     for (const c of containers) {
         try {
@@ -1800,31 +1810,31 @@ async function bulkRestartContainers() {
             else failed++;
         } catch (e) { failed++; }
     }
-    
+
     if (success > 0) showToast('success', `Restarted ${success} container(s)`);
     if (failed > 0) showToast('error', `Failed to restart ${failed} container(s)`);
-    
+
     setTimeout(() => location.reload(), 1000);
 }
 
 async function bulkRecreateContainers() {
     const containers = getSelectedContainers();
-    
+
     if (containers.length === 0) {
         showToast('info', 'No containers selected');
         return;
     }
-    
+
     const names = containers.map(c => c.name).join(', ');
     if (!confirm(`Recreate ${containers.length} container(s)?\n\nThis will pull the latest images and restart:\n${names}`)) return;
-    
+
     showToast('info', `Recreating ${containers.length} container(s)...`);
-    
+
     let success = 0, failed = 0;
     for (const c of containers) {
         try {
-            const response = await fetch(`/api/container/${c.id}/recreate`, { 
-                method: 'POST', 
+            const response = await fetch(`/api/container/${c.id}/recreate`, {
+                method: 'POST',
                 headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
                 body: JSON.stringify({ pull_latest: true })
             });
@@ -1833,10 +1843,10 @@ async function bulkRecreateContainers() {
             else failed++;
         } catch (e) { failed++; }
     }
-    
+
     if (success > 0) showToast('success', `Recreated ${success} container(s)`);
     if (failed > 0) showToast('error', `Failed to recreate ${failed} container(s)`);
-    
+
     setTimeout(() => location.reload(), 1500);
 }
 
@@ -1848,9 +1858,9 @@ async function updateContainer(containerId, containerName) {
     if (!confirmAction(`Update container "${containerName}"?\n\nThis will:\n• Pull the latest image\n• Stop the container\n• Recreate it with the same settings\n• Start it if it was running`)) {
         return;
     }
-    
+
     showToast('info', `Updating ${containerName}... This may take a moment.`, 6000);
-    
+
     try {
         const response = await fetch(`/api/container/${containerId}/recreate`, {
             method: 'POST',
@@ -1860,9 +1870,9 @@ async function updateContainer(containerId, containerName) {
             },
             body: JSON.stringify({ pull_latest: true })
         });
-        
+
         const data = await response.json();
-        
+
         if (data.success) {
             const newContainerId = data.container_id;
             let msg = data.message || `Container ${containerName} updated successfully`;
@@ -1873,12 +1883,12 @@ async function updateContainer(containerId, containerName) {
                 msg += ' - Container is starting...';
             }
             showToast('success', msg);
-            
+
             // Wait for container to be running if it was started
             if (data.started && newContainerId) {
                 await waitForContainerRunning(containerName, 15000);
             }
-            
+
             // Refresh the page to show new container
             setTimeout(() => location.reload(), 500);
         } else {
@@ -1917,7 +1927,7 @@ async function updateAllContainers() {
             name: card.querySelector('.container-name')?.textContent?.replace(/\s*ⓘ\s*$/, '').trim() || card.dataset.id
         });
     });
-    
+
     // Also check table view
     if (containersWithUpdates.length === 0) {
         document.querySelectorAll('tr[data-has-update="true"]').forEach(row => {
@@ -1927,24 +1937,24 @@ async function updateAllContainers() {
             });
         });
     }
-    
+
     if (containersWithUpdates.length === 0) {
         showToast('info', 'No containers with updates available');
         return;
     }
-    
+
     const names = containersWithUpdates.map(c => c.name).join('\n• ');
     if (!confirmAction(`Update ${containersWithUpdates.length} container(s)?\n\n• ${names}\n\nThis will pull latest images and recreate each container.`)) {
         return;
     }
-    
+
     const btn = document.getElementById('updateAllBtn');
     const originalText = btn.innerHTML;
     btn.innerHTML = '<span class="loading-spinner"></span> Updating...';
     btn.disabled = true;
-    
+
     showToast('info', `Updating ${containersWithUpdates.length} container(s)...`, 5000);
-    
+
     try {
         const response = await fetch('/api/containers/update-all', {
             method: 'POST',
@@ -1952,26 +1962,26 @@ async function updateAllContainers() {
                 'Content-Type': 'application/json',
                 ...csrfHeaders()
             },
-            body: JSON.stringify({ 
+            body: JSON.stringify({
                 container_ids: containersWithUpdates.map(c => c.id)
             })
         });
-        
+
         const data = await response.json();
-        
+
         if (data.updated > 0) {
             showToast('success', `Updated ${data.updated} container(s) - waiting for startup...`);
         }
         if (data.errors > 0) {
             showToast('warning', `${data.errors} container(s) failed to update`);
         }
-        
+
         // Wait a bit for containers to start before refreshing
         await new Promise(r => setTimeout(r, 3000));
-        
+
         // Refresh the page to show updated containers
         location.reload();
-        
+
     } catch (error) {
         console.error('Error updating containers:', error);
         showToast('error', 'Failed to update containers');
@@ -1985,7 +1995,7 @@ async function updateAllContainers() {
 document.addEventListener('DOMContentLoaded', function() {
     // Load stored update status
     loadStoredUpdates();
-    
+
     // Restore collapsed compose groups
     restoreCollapsedGroups();
 });
@@ -1999,28 +2009,28 @@ let currentDetailContainerData = null;
 
 async function openContainerDetail(containerId, containerName, containerImage, containerStatus, hasUpdate) {
     currentDetailContainerId = containerId;
-    
+
     const modal = document.getElementById('containerDetailModal');
     const title = document.getElementById('containerDetailTitle');
     const content = document.getElementById('containerDetailContent');
-    
+
     title.textContent = `📦 ${containerName}`;
     content.innerHTML = '<div class="loading" style="padding: 2rem; text-align: center;">Loading container details...</div>';
     modal.style.display = 'flex';
-    
+
     try {
         // Fetch full container details
         const response = await fetch(`/api/container/${containerId}`);
         const data = await response.json();
-        
+
         if (!data.success) {
             content.innerHTML = `<div class="no-data-msg" style="color: var(--danger-color);">Error: ${data.error || 'Failed to load container details'}</div>`;
             return;
         }
-        
+
         currentDetailContainerData = data.container;
         renderContainerDetailModal(containerName, containerImage, containerStatus, hasUpdate === 'true', data.container);
-        
+
     } catch (error) {
         console.error('Error loading container details:', error);
         content.innerHTML = '<div class="no-data-msg" style="color: var(--danger-color);">Failed to load container details</div>';
@@ -2030,20 +2040,20 @@ async function openContainerDetail(containerId, containerName, containerImage, c
 function renderContainerDetailModal(name, image, status, hasUpdate, containerData) {
     const content = document.getElementById('containerDetailContent');
     const isRunning = status === 'running';
-    
+
     // Build vulnerability summary
     let vulnHtml = '';
     const card = document.querySelector(`.container-card[data-id="${currentDetailContainerId}"]`);
     const row = document.querySelector(`tr[data-id="${currentDetailContainerId}"]`);
     const element = card || row;
-    
+
     if (element) {
         const vulnCritical = parseInt(element.dataset.vulnCritical) || 0;
         const vulnHigh = parseInt(element.dataset.vulnHigh) || 0;
         const vulnMedium = parseInt(element.dataset.vulnMedium) || 0;
         const vulnLow = parseInt(element.dataset.vulnLow) || 0;
         const vulnTotal = parseInt(element.dataset.vulnTotal) || 0;
-        
+
         if (vulnTotal > 0) {
             vulnHtml = `
                 <div class="security-summary-card">
@@ -2076,7 +2086,7 @@ function renderContainerDetailModal(name, image, status, hasUpdate, containerDat
             `;
         }
     }
-    
+
     // Build links section
     let linksHtml = '<p class="no-data-msg">No exposed ports</p>';
     const ports = containerData.ports || [];
@@ -2088,7 +2098,7 @@ function renderContainerDetailModal(name, image, status, hasUpdate, containerDat
         }
         linksHtml += '</div>';
     }
-    
+
     // Build mounts info
     let mountsHtml = '';
     const mounts = containerData.mounts || [];
@@ -2100,7 +2110,7 @@ function renderContainerDetailModal(name, image, status, hasUpdate, containerDat
     } else {
         mountsHtml = '<span class="text-muted">None</span>';
     }
-    
+
     // Build networks info
     let networksHtml = '';
     const networks = containerData.networks || [];
@@ -2109,7 +2119,7 @@ function renderContainerDetailModal(name, image, status, hasUpdate, containerDat
     } else {
         networksHtml = '<span class="text-muted">None</span>';
     }
-    
+
     content.innerHTML = `
         <!-- Container Info -->
         <div class="detail-section">
@@ -2136,7 +2146,7 @@ function renderContainerDetailModal(name, image, status, hasUpdate, containerDat
                 </div>
             </div>
         </div>
-        
+
         <!-- Quick Actions -->
         <div class="detail-section">
             <div class="detail-section-title">⚡ Quick Actions</div>
@@ -2170,7 +2180,7 @@ function renderContainerDetailModal(name, image, status, hasUpdate, containerDat
                 `}
             </div>
         </div>
-        
+
         <!-- More Actions -->
         <div class="detail-section">
             <div class="detail-section-title">🔧 Tools</div>
@@ -2191,19 +2201,19 @@ function renderContainerDetailModal(name, image, status, hasUpdate, containerDat
                 ` : ''}
             </div>
         </div>
-        
+
         <!-- Security -->
         <div class="detail-section">
             <div class="detail-section-title">🛡️ Security</div>
             ${vulnHtml}
         </div>
-        
+
         <!-- Links -->
         <div class="detail-section">
             <div class="detail-section-title">🔗 Exposed Ports</div>
             ${linksHtml}
         </div>
-        
+
         <!-- Mounts Preview -->
         <div class="detail-section">
             <div class="detail-section-title">💾 Mounts</div>
@@ -2229,26 +2239,26 @@ async function scanContainerFromDetail(containerId, containerName) {
     if (securitySection) {
         securitySection.innerHTML = '<div class="loading">Scanning for vulnerabilities...</div>';
     }
-    
+
     try {
         // Get the image from the card/row
         const card = document.querySelector(`.container-card[data-id="${containerId}"]`);
         const row = document.querySelector(`tr[data-id="${containerId}"]`);
         const element = card || row;
         const image = element?.dataset?.imageFull || element?.dataset?.image;
-        
+
         if (!image) {
             showToast('error', 'Could not determine container image');
             return;
         }
-        
+
         const response = await fetch('/api/vulnerabilities/scan', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
             body: JSON.stringify({ image: image })
         });
         const data = await response.json();
-        
+
         if (data.success) {
             showToast('success', `Scan complete for ${containerName}`);
             setTimeout(() => location.reload(), 1500);
@@ -2266,7 +2276,7 @@ async function scanContainerFromDetail(containerId, containerName) {
 
 async function checkSingleContainerUpdate(containerId, image) {
     showToast('info', 'Checking for updates...');
-    
+
     try {
         const response = await fetch('/api/images/check-update', {
             method: 'POST',
@@ -2274,7 +2284,7 @@ async function checkSingleContainerUpdate(containerId, image) {
             body: JSON.stringify({ image: image })
         });
         const data = await response.json();
-        
+
         if (data.success) {
             if (data.update_available) {
                 showToast('success', 'Update available! Refreshing...');

@@ -11,6 +11,16 @@ from services.vulnerability_service import (
     get_stored_vulnerabilities, get_scan_status, get_scan_settings,
     update_scan_settings, scan_container_image
 )
+from services.fleet_service import get_endpoint
+
+
+def _remote_scan_error():
+    if get_endpoint().kind != 'local':
+        return jsonify({
+            'success': False,
+            'error': 'Remote vulnerability scanning is not yet installed on DockDash agents'
+        }), 409
+    return None
 
 vulnerabilities_bp = Blueprint('vulnerabilities', __name__)
 
@@ -34,12 +44,15 @@ def api_scanner_status():
 @login_required
 def api_scan_image():
     """Scan a single image for vulnerabilities."""
+    remote_error = _remote_scan_error()
+    if remote_error:
+        return remote_error
     image = (request.args.get('image') or '').strip()
     severity = request.args.get('severity', 'CRITICAL,HIGH')
-    
+
     if not image:
         return jsonify({'success': False, 'error': 'Image parameter required'}), 400
-    
+
     result = scan_image(image, severity)
     return jsonify(result)
 
@@ -48,13 +61,16 @@ def api_scan_image():
 @login_required
 def api_scan_images():
     """Scan multiple images for vulnerabilities."""
+    remote_error = _remote_scan_error()
+    if remote_error:
+        return remote_error
     data = request.get_json() or {}
     images = data.get('images', [])
     severity = data.get('severity', 'CRITICAL,HIGH')
-    
+
     if not images or not isinstance(images, list):
         return jsonify({'success': False, 'error': 'images array required'}), 400
-    
+
     result = scan_multiple_images(images, severity)
     return jsonify(result)
 
@@ -72,15 +88,15 @@ def api_vulnerability_report(image_ref):
 def api_vulnerability_details(image_ref):
     """Get full vulnerability details (CVE list) for an image from stored data."""
     from models import ImageVulnerability
-    
+
     try:
         vuln = ImageVulnerability.query.filter_by(image_ref=image_ref).first()
         if not vuln:
             return jsonify({
-                'success': False, 
+                'success': False,
                 'error': 'No scan data found for this image. Run a security scan first.'
             }), 404
-        
+
         return jsonify({
             'success': True,
             'image': vuln.image_ref,
@@ -111,10 +127,13 @@ def api_clear_cache():
 @login_required
 def api_scan_all_images():
     """Scan all container images for vulnerabilities."""
+    remote_error = _remote_scan_error()
+    if remote_error:
+        return remote_error
     try:
         data = request.get_json(silent=True) or {}
         severity = data.get('severity')  # Use settings default if not provided
-        
+
         result = scan_all_container_images(severity)
         return jsonify(result)
     except Exception as e:
@@ -156,7 +175,7 @@ def api_get_scan_settings():
 def api_update_scan_settings():
     """Update vulnerability scan settings."""
     data = request.get_json() or {}
-    
+
     result = update_scan_settings(
         enabled=data.get('enabled'),
         schedule_type=data.get('schedule_type'),
@@ -173,8 +192,11 @@ def api_update_scan_settings():
 @login_required
 def api_scan_container(container_id):
     """Scan a specific container's image for vulnerabilities."""
+    remote_error = _remote_scan_error()
+    if remote_error:
+        return remote_error
     data = request.get_json() or {}
     force = data.get('force', True)  # Force fresh scan by default
-    
+
     result = scan_container_image(container_id, force=force)
     return jsonify(result)

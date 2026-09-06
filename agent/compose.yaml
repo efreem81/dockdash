@@ -1,0 +1,29 @@
+services:
+  dockdash-agent:
+    build: .
+    image: dockdash-agent:local
+    container_name: dockdash-agent
+    restart: unless-stopped
+    userns_mode: host
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+      - /root/.docker:rw,noexec,nosuid,size=16m
+    ports:
+      - "${DOCKDASH_AGENT_BIND:?Set DOCKDASH_AGENT_BIND to this host's management IP}:9002:9002"
+    environment:
+      DOCKDASH_COMPOSE_ROOTS: "${DOCKDASH_COMPOSE_ROOTS:-/home/eric/docker-compose,/opt}"
+      DOCKDASH_MANAGED_ROOT: "${DOCKDASH_MANAGED_ROOT:-/opt/dockdash-managed}"
+      DOCKDASH_AGENT_MIN_FREE_BYTES: "${DOCKDASH_AGENT_MIN_FREE_BYTES:-1073741824}"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+      - /etc/dockdash-agent:/certs:ro
+      - /home/eric/docker-compose:/home/eric/docker-compose:ro
+      # Compose env_file references are read here; DockDash cannot edit runtime data.
+      - /home/eric/docker:/home/eric/docker:ro
+      - /mnt:/mnt:ro
+      - /opt:/opt:rw

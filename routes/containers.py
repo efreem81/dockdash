@@ -4,15 +4,20 @@ Container management endpoints: start, stop, restart, logs, stats, exec, remove
 """
 import time
 import requests
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, current_app, request, jsonify
 from flask_login import login_required
 
 from services.docker_service import (
-    get_docker_client, get_all_containers, get_container_info,
-    get_container_stats, exec_container, remove_container,
     prune_containers, get_host_ip
 )
 from services.lifecycle_service import recreate_container
+from services.fleet_service import (
+    get_endpoint, list_containers as fleet_list_containers,
+    container_detail as fleet_container_detail,
+    container_stats as fleet_container_stats,
+    container_logs as fleet_container_logs,
+    container_action as fleet_container_action,
+)
 
 containers_bp = Blueprint('containers', __name__)
 
@@ -38,21 +43,20 @@ def _cache_set(key, value):
 @containers_bp.route('/containers')
 @login_required
 def api_containers():
+    endpoint = get_endpoint()
     show_all = request.args.get('show_all', 'false').lower() == 'true'
-    containers = get_all_containers(show_all=show_all)
-    return jsonify(containers)
+    try:
+        return jsonify(fleet_list_containers(endpoint, show_all=show_all))
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 502
 
 
 @containers_bp.route('/container/<container_id>')
 @login_required
 def api_container_detail(container_id):
     """Get detailed info for a single container."""
-    client = get_docker_client()
-    if not client:
-        return jsonify({'success': False, 'error': 'Docker not available'}), 500
     try:
-        container = client.containers.get(container_id)
-        return jsonify({'success': True, 'container': get_container_info(container)})
+        return jsonify({'success': True, 'container': fleet_container_detail(get_endpoint(), container_id)})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 404
 
@@ -61,7 +65,10 @@ def api_container_detail(container_id):
 @login_required
 def api_container_stats(container_id):
     """Get real-time stats for a container."""
-    stats = get_container_stats(container_id)
+    try:
+        stats = fleet_container_stats(get_endpoint(), container_id)
+    except Exception as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 502
     if stats and 'error' not in stats:
         return jsonify({'success': True, 'stats': stats})
     return jsonify({'success': False, 'error': stats.get('error', 'Unknown error')}), 500
@@ -70,13 +77,8 @@ def api_container_stats(container_id):
 @containers_bp.route('/container/<container_id>/restart', methods=['POST'])
 @login_required
 def restart_container(container_id):
-    client = get_docker_client()
-    if not client:
-        return jsonify({'success': False, 'error': 'Docker not available'}), 500
     try:
-        container = client.containers.get(container_id)
-        container.restart()
-        return jsonify({'success': True, 'message': f'Container {container.name} restarted'})
+        return jsonify(fleet_container_action(get_endpoint(), container_id, 'restart'))
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -84,13 +86,8 @@ def restart_container(container_id):
 @containers_bp.route('/container/<container_id>/stop', methods=['POST'])
 @login_required
 def stop_container(container_id):
-    client = get_docker_client()
-    if not client:
-        return jsonify({'success': False, 'error': 'Docker not available'}), 500
     try:
-        container = client.containers.get(container_id)
-        container.stop()
-        return jsonify({'success': True, 'message': f'Container {container.name} stopped'})
+        return jsonify(fleet_container_action(get_endpoint(), container_id, 'stop'))
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -98,13 +95,8 @@ def stop_container(container_id):
 @containers_bp.route('/container/<container_id>/start', methods=['POST'])
 @login_required
 def start_container(container_id):
-    client = get_docker_client()
-    if not client:
-        return jsonify({'success': False, 'error': 'Docker not available'}), 500
     try:
-        container = client.containers.get(container_id)
-        container.start()
-        return jsonify({'success': True, 'message': f'Container {container.name} started'})
+        return jsonify(fleet_container_action(get_endpoint(), container_id, 'start'))
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -114,7 +106,10 @@ def start_container(container_id):
 def api_remove_container(container_id):
     """Remove a container."""
     force = request.json.get('force', False) if request.is_json else False
-    result = remove_container(container_id, force=force)
+    try:
+        result = fleet_container_action(get_endpoint(), container_id, 'remove', {'force': force})
+    except Exception as exc:
+        result = {'success': False, 'error': str(exc)}
     status = 200 if result['success'] else 500
     return jsonify(result), status
 
@@ -122,10 +117,6 @@ def api_remove_container(container_id):
 @containers_bp.route('/container/<container_id>/logs')
 @login_required
 def container_logs(container_id):
-    client = get_docker_client()
-    if not client:
-        return jsonify({'success': False, 'error': 'Docker not available'}), 500
-
     tail = request.args.get('tail', '200')
     timestamps = request.args.get('timestamps', '1') == '1'
     try:
@@ -134,10 +125,8 @@ def container_logs(container_id):
         tail_n = 200
 
     try:
-        container = client.containers.get(container_id)
-        logs = container.logs(tail=tail_n, timestamps=timestamps)
-        logs_text = logs.decode('utf-8', errors='replace') if isinstance(logs, bytes) else str(logs)
-        return jsonify({'success': True, 'container': container.name, 'logs': logs_text})
+        logs_text = fleet_container_logs(get_endpoint(), container_id, tail_n, timestamps)
+        return jsonify({'success': True, 'logs': logs_text})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -149,11 +138,20 @@ def api_exec_container(container_id):
     data = request.get_json() or {}
     command = data.get('command')
     workdir = data.get('workdir')
-    
+
     if not command:
         return jsonify({'success': False, 'error': 'Command required'}), 400
-    
-    result = exec_container(container_id, command, workdir)
+
+    endpoint = get_endpoint()
+    if endpoint.kind != 'local':
+        return jsonify({
+            'success': False,
+            'error': 'Remote container exec is intentionally unavailable',
+        }), 403
+    try:
+        result = fleet_container_action(endpoint, container_id, 'exec', {'command': command, 'workdir': workdir})
+    except Exception as exc:
+        result = {'success': False, 'error': str(exc)}
     status = 200 if result['success'] else 500
     return jsonify(result), status
 
@@ -162,6 +160,9 @@ def api_exec_container(container_id):
 @login_required
 def api_prune_containers():
     """Remove all stopped containers."""
+    endpoint = get_endpoint()
+    if endpoint.kind != 'local':
+        return jsonify({'success': False, 'error': 'Remote container pruning is intentionally unavailable'}), 403
     result = prune_containers()
     status = 200 if result['success'] else 500
     return jsonify(result), status
@@ -173,14 +174,17 @@ def api_recreate_container(container_id):
     """Recreate a container with optionally updated image."""
     data = request.get_json() or {}
     pull_latest = data.get('pull_latest', True)
-    
+
+    endpoint = get_endpoint()
+    if endpoint.kind != 'local':
+        return jsonify({'success': False, 'error': 'Use the Compose Projects page to recreate remote workloads from their owning definition'}), 409
     result = recreate_container(container_id, pull_latest=pull_latest)
-    
+
     # Clear update status for this image since we just updated
     if result.get('success') and result.get('image'):
         from services.update_service import clear_update_status
         clear_update_status(result['image'])
-    
+
     status = 200 if result['success'] else 500
     return jsonify(result), status
 
@@ -189,35 +193,38 @@ def api_recreate_container(container_id):
 @login_required
 def api_update_all_containers():
     """Update all containers that have available updates."""
+    endpoint = get_endpoint()
+    if endpoint.kind != 'local':
+        return jsonify({'success': False, 'error': 'Use project pull-and-deploy jobs for remote workloads'}), 409
     from services.update_service import get_stored_updates, clear_update_status
     from services.docker_service import get_all_containers
-    
+
     data = request.get_json() or {}
     container_ids = data.get('container_ids', [])  # Optional: specific containers to update
-    
+
     # Get containers and their update status
     containers = get_all_containers(show_all=True)
     stored_updates = get_stored_updates()
-    
+
     results = []
     success_count = 0
     error_count = 0
     updated_images = []  # Track images that were updated for batch scanning
-    
+
     for container in containers:
         container_id = container.get('id')
         container_name = container.get('name')
         image = container.get('image')
-        
+
         # If specific containers requested, filter
         if container_ids and container_id not in container_ids and container_name not in container_ids:
             continue
-        
+
         # Check if this container has an update
         update_info = stored_updates.get(image, {})
         if not update_info.get('has_update'):
             continue
-        
+
         # Try to recreate (skip_scan=True to avoid Trivy cache lock conflicts)
         try:
             result = recreate_container(container_id, pull_latest=True, skip_scan=True)
@@ -248,7 +255,7 @@ def api_update_all_containers():
                 'success': False,
                 'error': str(e)
             })
-    
+
     # Run vulnerability scans sequentially for updated images (avoids Trivy lock conflicts)
     if updated_images:
         import threading
@@ -266,7 +273,7 @@ def api_update_all_containers():
                     print(f"Warning: Could not scan image {image_ref}: {e}")
         # Run scans in background thread so response isn't delayed
         threading.Thread(target=scan_updated_images, daemon=True).start()
-    
+
     return jsonify({
         'success': error_count == 0,
         'updated': success_count,
@@ -317,23 +324,27 @@ def api_probe_link():
 def _probe_http_scheme(host, port):
     """Return (scheme, web) where scheme is 'https'|'http'|'unknown'."""
     headers = {'User-Agent': 'DockDashProbe/1.0', 'Accept': '*/*'}
-    
+
     # Try HTTPS first
     try:
-        r = requests.head(f"https://{host}:{port}", timeout=1.5, allow_redirects=True, 
-                         verify=False, headers=headers)
+        # This unauthenticated reachability probe deliberately supports local
+        # self-signed application certificates and sends no sensitive data.
+        r = requests.head(
+            f"https://{host}:{port}", timeout=1.5, allow_redirects=True,
+            verify=False, headers=headers,  # nosec B501
+        )
         r.close()
         return 'https', True
-    except Exception:
-        pass
-    
+    except requests.RequestException as exc:
+        current_app.logger.debug('HTTPS probe failed for %s:%s: %s', host, port, exc)
+
     # Try HTTP
     try:
-        r = requests.head(f"http://{host}:{port}", timeout=1.5, allow_redirects=True, 
+        r = requests.head(f"http://{host}:{port}", timeout=1.5, allow_redirects=True,
                          headers=headers)
         r.close()
         return 'http', True
-    except Exception:
-        pass
-    
+    except requests.RequestException as exc:
+        current_app.logger.debug('HTTP probe failed for %s:%s: %s', host, port, exc)
+
     return 'unknown', False

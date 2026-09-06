@@ -1,6 +1,7 @@
 services:
   dockdash:
     build: .
+    image: dockdash:local
     container_name: dockdash
     ports:
       - "${DOCKDASH_PORT:-9999}:5000"
@@ -9,10 +10,12 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:rw
       # Use bind mount for data directory (more reliable than named volumes)
       - ./data:/app/data
+    networks:
+      - dockdash-control
     environment:
-      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
+      - SECRET_KEY=${SECRET_KEY:?Set SECRET_KEY in .env}
       - DEFAULT_USERNAME=${DEFAULT_USERNAME:-admin}
-      - DEFAULT_PASSWORD=${DEFAULT_PASSWORD:-dockdash}
+      - DEFAULT_PASSWORD=${DEFAULT_PASSWORD:?Set DEFAULT_PASSWORD in .env}
       - DOCKDASH_PORT=${DOCKDASH_PORT:-9999}
       # Set HOST_IP to your server's LAN IP for correct container URLs
       - HOST_IP=${HOST_IP:-}
@@ -32,3 +35,29 @@ services:
       retries: 3
       start_period: 10s
 
+  dockdash-worker:
+    build: .
+    image: dockdash:local
+    restart: unless-stopped
+    entrypoint: ["/app/worker-entrypoint.sh"]
+    depends_on:
+      dockdash:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+    networks:
+      - dockdash-control
+    environment:
+      - SECRET_KEY=${SECRET_KEY:?Set SECRET_KEY in .env}
+      - DEFAULT_USERNAME=${DEFAULT_USERNAME:-admin}
+      - DEFAULT_PASSWORD=${DEFAULT_PASSWORD:?Set DEFAULT_PASSWORD in .env}
+      - DOCKDASH_SKIP_DB_INIT=1
+      - DOCKDASH_AGENT_CA=${DOCKDASH_AGENT_CA:-/app/data/pki/ca.crt}
+      - DOCKDASH_AGENT_CERT=${DOCKDASH_AGENT_CERT:-/app/data/pki/controller.crt}
+      - DOCKDASH_AGENT_KEY=${DOCKDASH_AGENT_KEY:-/app/data/pki/controller.key}
+    healthcheck:
+      disable: true
+
+networks:
+  dockdash-control:
+    external: true

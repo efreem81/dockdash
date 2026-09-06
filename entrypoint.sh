@@ -1,16 +1,23 @@
 #!/bin/bash
+set -euo pipefail
+
+umask 077
 
 echo "DockDash is starting..."
 
 # Ensure data directory exists and is writable
 mkdir -p /app/data
-chmod 755 /app/data
+chmod 700 /app/data
 
 # Run database initialization
-python init_db.py || {
-    echo "Database initialization had issues, but continuing..."
-    # Don't exit on database error - it might initialize on first request
-}
+python init_db.py
+chmod 700 /app/data
+for database_file in /app/data/dockdash.db /app/data/dockdash.db-wal /app/data/dockdash.db-shm; do
+    if [[ -e "$database_file" ]]; then
+        chmod 600 "$database_file"
+    fi
+done
+export DOCKDASH_SKIP_DB_INIT=1
 
 # Get the port from environment or use default
 PORT=${DOCKDASH_PORT:-9999}

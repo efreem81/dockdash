@@ -4,7 +4,7 @@ Handles checking for image updates, storing results, and scheduled checks.
 """
 import logging
 from datetime import datetime
-from typing import Dict, List, Any, Optional
+from typing import Dict, Any, Optional
 
 from services.docker_service import get_all_containers
 from services.image_service import check_image_update
@@ -24,7 +24,7 @@ def _log(level: int, message: str):
 def get_update_settings() -> Dict[str, Any]:
     """Get current update check settings."""
     from models import UpdateSettings
-    
+
     try:
         settings = UpdateSettings.get_settings()
         return {
@@ -53,10 +53,10 @@ def update_update_settings(data: Dict[str, Any]) -> Dict[str, Any]:
     """Update the update check settings."""
     from config import db
     from models import UpdateSettings
-    
+
     try:
         settings = UpdateSettings.get_settings()
-        
+
         if 'enabled' in data:
             settings.enabled = bool(data['enabled'])
         if 'schedule_type' in data:
@@ -67,10 +67,10 @@ def update_update_settings(data: Dict[str, Any]) -> Dict[str, Any]:
             settings.schedule_minute = int(data['schedule_minute']) % 60
         if 'schedule_day' in data:
             settings.schedule_day = int(data['schedule_day']) % 7
-        
+
         db.session.commit()
         _log(logging.INFO, f"Update settings saved: enabled={settings.enabled}, type={settings.schedule_type}")
-        
+
         return {'success': True, 'message': 'Settings saved'}
     except Exception as e:
         _log(logging.ERROR, f"Error saving settings: {e}")
@@ -85,19 +85,19 @@ def save_update_result(image_ref: str, result: Dict[str, Any]):
     """Save an update check result to the database."""
     from config import db
     from models import ImageUpdate
-    
+
     try:
         update = ImageUpdate.query.filter_by(image_ref=image_ref).first()
         if not update:
             update = ImageUpdate(image_ref=image_ref)
             db.session.add(update)
-        
+
         update.has_update = result.get('has_update', False) or False
         update.local_digest = result.get('local_digest')
         update.remote_digest = result.get('remote_digest')
         update.error = result.get('error')
         update.checked_at = datetime.utcnow()
-        
+
         db.session.commit()
         return True
     except Exception as e:
@@ -108,7 +108,7 @@ def save_update_result(image_ref: str, result: Dict[str, Any]):
 def get_stored_updates() -> Dict[str, Dict]:
     """Get all stored update check results."""
     from models import ImageUpdate
-    
+
     try:
         updates = ImageUpdate.query.all()
         return {u.image_ref: u.to_dict() for u in updates}
@@ -119,7 +119,7 @@ def get_stored_updates() -> Dict[str, Dict]:
 def get_image_update_status(image_ref: str) -> Optional[Dict]:
     """Get stored update status for a specific image."""
     from models import ImageUpdate
-    
+
     try:
         update = ImageUpdate.query.filter_by(image_ref=image_ref).first()
         return update.to_dict() if update else None
@@ -129,14 +129,14 @@ def get_image_update_status(image_ref: str) -> Optional[Dict]:
 
 def clear_update_status(image_ref: str = None):
     """Clear stored update status for an image or all images.
-    
+
     When clearing a specific image, we set has_update=False rather than deleting,
     so we preserve the check history. When clearing all, we delete everything.
     """
     from config import db
     from models import ImageUpdate
     from datetime import datetime
-    
+
     try:
         if image_ref:
             # For a specific image, just mark it as no longer having an update
@@ -169,9 +169,9 @@ def check_all_container_images() -> Dict[str, Any]:
     """Check all container images for updates and store results."""
     from config import db
     from models import UpdateSettings
-    
+
     _log(logging.INFO, "=== Starting full update check ===")
-    
+
     # Update settings to mark check started
     try:
         settings = UpdateSettings.get_settings()
@@ -179,17 +179,17 @@ def check_all_container_images() -> Dict[str, Any]:
         db.session.commit()
     except Exception as e:
         _log(logging.ERROR, f"Could not update check start time: {e}")
-    
+
     # Get all unique images
     containers = get_all_containers(show_all=True)
     images = list(set(c.get('image') for c in containers if c.get('image') and c.get('image') != 'unknown'))
-    
+
     _log(logging.INFO, f"Checking {len(images)} unique images for updates")
-    
+
     results = {}
     updates_found = 0
     errors = 0
-    
+
     for i, image in enumerate(images):
         _log(logging.DEBUG, f"Checking [{i+1}/{len(images)}]: {image}")
         try:
@@ -205,7 +205,7 @@ def check_all_container_images() -> Dict[str, Any]:
             errors += 1
             _log(logging.ERROR, f"  ❌ Failed to check {image}: {e}")
             results[image] = {'error': str(e), 'has_update': None}
-    
+
     # Update settings with completion info
     try:
         settings = UpdateSettings.get_settings()
@@ -215,9 +215,9 @@ def check_all_container_images() -> Dict[str, Any]:
         db.session.commit()
     except Exception as e:
         _log(logging.ERROR, f"Could not update check completion: {e}")
-    
+
     _log(logging.INFO, f"=== Update check complete: {updates_found} updates, {errors} errors ===")
-    
+
     return {
         'success': True,
         'images_checked': len(images),
@@ -234,31 +234,31 @@ def check_all_container_images() -> Dict[str, Any]:
 def should_run_scheduled_check() -> bool:
     """Check if a scheduled update check should run now."""
     from models import UpdateSettings
-    
+
     try:
         settings = UpdateSettings.get_settings()
         if not settings.enabled:
             return False
-        
+
         now = datetime.now()
-        
+
         # Check if we're in the right time window (within 5 minutes)
         if now.hour != settings.schedule_hour:
             return False
         if abs(now.minute - settings.schedule_minute) > 5:
             return False
-        
+
         # For weekly, check day of week
         if settings.schedule_type == 'weekly':
             if now.weekday() != settings.schedule_day:
                 return False
-        
+
         # Check if we already ran recently (within last hour)
         if settings.last_check_completed:
             delta = now - settings.last_check_completed
             if delta.total_seconds() < 3600:
                 return False
-        
+
         return True
     except Exception:
         return False

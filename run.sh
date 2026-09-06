@@ -1,11 +1,17 @@
 #!/bin/bash
 # Build and run DockDash
 
-set -e
+set -euo pipefail
+umask 077
 
 # Ensure data directory exists on host for bind mount
 mkdir -p data
-chmod 755 data
+chmod 700 data
+for database_file in data/dockdash.db data/dockdash.db-wal data/dockdash.db-shm; do
+  if [[ -e "$database_file" ]]; then
+    chmod 600 "$database_file"
+  fi
+done
 
 get_host_ip() {
   # Try to get the default route interface IP

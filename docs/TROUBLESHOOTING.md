@@ -41,8 +41,9 @@
 
 **Prevention:**
 - The Dockerfile now creates the `data/` directory automatically
-- The startup script (`init_db.py`) runs before Gunicorn starts
-- Database initialization is also deferred to the first request as a fallback
+- The startup script (`init_db.py`) runs before Gunicorn starts and exits on any migration failure
+- Gunicorn and the worker validate the complete required schema before accepting work
+- The data directory is mode `0700`; SQLite database, WAL, and SHM files are mode `0600`
 
 ---
 
@@ -345,10 +346,10 @@ upstream dockdash {
 server {
     listen 443 ssl http2;
     server_name dockdash.example.com;
-    
+
     ssl_certificate /path/to/cert.pem;
     ssl_certificate_key /path/to/key.pem;
-    
+
     location / {
         proxy_pass http://dockdash;
         proxy_set_header Host $host;
@@ -488,5 +489,5 @@ Share the output when reporting issues.
 
 ---
 
-**Last Updated:** February 1, 2026  
+**Last Updated:** February 1, 2026
 **For more help:** See [SECURITY.md](SECURITY.md) for production deployment guidance.

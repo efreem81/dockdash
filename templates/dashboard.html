@@ -3,10 +3,13 @@
 {% block title %}Dashboard - DockDash{% endblock %}
 
 {% block content %}
-<div class="dashboard" data-show-all="{{ 'true' if show_all else 'false' }}">
+<div class="dashboard" data-show-all="{{ 'true' if show_all else 'false' }}" data-endpoint-id="{{ endpoint.id }}">
     <div class="page-header">
         <h1>🐳 Docker Containers</h1>
         <div class="header-actions">
+            <select id="dashboardEndpoint" onchange="location.href='/dashboard?endpoint_id='+this.value" title="Docker endpoint">
+                {% for item in endpoints %}<option value="{{ item.id }}" {% if item.id == endpoint.id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+            </select>
             <div class="view-toggle">
                 <button class="view-btn active" id="cardViewBtn" onclick="setView('card')" title="Card View">
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
@@ -75,7 +78,7 @@
     {% endif %}
 
     <div class="info-bar">
-        <span class="host-ip">🌐 Host IP: <strong>{{ host_ip }}</strong></span>
+        <span class="host-ip">🖥️ <strong>{{ endpoint.name }}</strong> · {{ host_ip }}</span>
         <span class="container-count">📦 Containers: <strong id="containerCount">{{ containers|length }}</strong></span>
         {% set vuln_container_count = containers|selectattr('vulnerabilities')|selectattr('vulnerabilities.total', 'gt', 0)|list|length %}
         <a href="#" class="info-stat info-stat-clickable" id="vulnCountLink" onclick="toggleVulnFilter(); return false;" style="display: {{ 'inline-flex' if vuln_container_count > 0 else 'none' }};" title="Click to filter containers with vulnerabilities">
@@ -184,7 +187,7 @@
     <!-- Card View -->
     <div class="container-grid-wrapper" id="containerGrid">
         {% macro container_card(container) %}
-        <div class="container-card status-{{ container.status }}" 
+        <div class="container-card status-{{ container.status }}"
              data-name="{{ container.name|lower }}"
              data-status="{{ container.status }}"
              data-image="{{ container.image|lower }}"
@@ -202,12 +205,12 @@
                 <input type="checkbox" class="container-checkbox" data-id="{{ container.id }}" data-name="{{ container.name }}" data-status="{{ container.status }}" onchange="updateBulkSelection()">
             </label>
             <div class="container-header">
-                <h3 class="container-name container-name-clickable" 
+                <h3 class="container-name container-name-clickable"
                     onclick="openContainerDetail('{{ container.id }}', '{{ container.name }}', '{{ container.image }}', '{{ container.status }}', '{{ container.has_update|lower }}')"
                     title="Click for full details and actions">{{ container.name }}</h3>
                 <div class="header-badges">
                     {% if container.vulnerabilities and container.vulnerabilities.total > 0 %}
-                    <button class="vuln-badge-btn {% if container.vulnerabilities.critical > 0 %}vuln-critical{% elif container.vulnerabilities.high > 0 %}vuln-high{% elif container.vulnerabilities.medium > 0 %}vuln-medium{% else %}vuln-low{% endif %}" 
+                    <button class="vuln-badge-btn {% if container.vulnerabilities.critical > 0 %}vuln-critical{% elif container.vulnerabilities.high > 0 %}vuln-high{% elif container.vulnerabilities.medium > 0 %}vuln-medium{% else %}vuln-low{% endif %}"
                           onclick="event.stopPropagation(); showVulnerabilities('{{ container.image }}', '{{ container.name }}')"
                           title="Click for vulnerability details">
                         🛡️ {{ container.vulnerabilities.critical }}C/{{ container.vulnerabilities.high }}H/{{ container.vulnerabilities.medium }}M/{{ container.vulnerabilities.low }}L
@@ -226,7 +229,7 @@
                     <span class="status-badge status-{{ container.status }}">{{ container.status }}</span>
                 </div>
             </div>
-            
+
             <div class="container-details">
                 <div class="detail-row">
                     <span class="detail-label">Image:</span>
@@ -441,7 +444,7 @@
                     </td>
                     <td class="cell-security">
                         {% if container.vulnerabilities and container.vulnerabilities.total > 0 %}
-                        <button class="vuln-badge-btn vuln-badge-compact {% if container.vulnerabilities.critical > 0 %}vuln-critical{% elif container.vulnerabilities.high > 0 %}vuln-high{% elif container.vulnerabilities.medium > 0 %}vuln-medium{% else %}vuln-low{% endif %}" 
+                        <button class="vuln-badge-btn vuln-badge-compact {% if container.vulnerabilities.critical > 0 %}vuln-critical{% elif container.vulnerabilities.high > 0 %}vuln-high{% elif container.vulnerabilities.medium > 0 %}vuln-medium{% else %}vuln-low{% endif %}"
                               onclick="showVulnerabilities('{{ container.image }}', '{{ container.name }}')"
                               title="Click for vulnerability details">
                             {{ container.vulnerabilities.critical }}C/{{ container.vulnerabilities.high }}H/{{ container.vulnerabilities.medium }}M/{{ container.vulnerabilities.low }}L

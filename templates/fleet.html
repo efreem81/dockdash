@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Docker Fleet - DockDash{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div><h1>Docker Fleet</h1><p class="page-subtitle">License-free management for every Docker host.</p></div>
+  <button class="btn btn-primary" onclick="showEndpointForm()">Add endpoint</button>
+</div>
+<div class="fleet-grid">
+{% for item in endpoints %}
+  <article class="settings-section endpoint-card" data-id="{{ item.id }}">
+    <div class="section-header"><div><h2>{{ item.name }}</h2><p>{{ item.kind }}{% if item.url %} · {{ item.url }}{% endif %}</p></div><span class="status-badge status-{{ item.state_hint }}">{{ item.state_hint }}</span></div>
+    <p class="text-muted endpoint-result">{% if item.last_seen %}Last seen {{ item.last_seen }}{% else %}Not tested{% endif %}</p>
+    <div class="action-buttons">
+      <button class="btn btn-secondary" onclick="testEndpoint({{ item.id }})">Test</button>
+      <button class="btn btn-primary" onclick="selectEndpoint({{ item.id }})">Open dashboard</button>
+      <a class="btn btn-secondary" href="{{ url_for('projects.projects', endpoint_id=item.id) }}">Projects</a>
+    </div>
+  </article>
+{% endfor %}
+</div>
+<div class="modal-overlay" id="endpointModal" style="display:none" onclick="closeEndpointForm(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header"><h2>Add agent endpoint</h2><button class="modal-close" onclick="closeEndpointForm()">×</button></div>
+    <div class="form-group"><label>Name</label><input id="endpointName" placeholder="dockerhost"></div>
+    <div class="form-group"><label>Agent URL</label><input id="endpointUrl" placeholder="https://192.168.0.145:9002"></div>
+    <div class="form-group"><label>Public/service IP</label><input id="endpointPublicIp" placeholder="192.168.0.145"></div>
+    <button class="btn btn-primary" onclick="createEndpoint()">Add endpoint</button>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/fleet.js') }}"></script>{% endblock %}

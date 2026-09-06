@@ -2,12 +2,12 @@
 Notification API Routes
 Webhook configuration and testing
 """
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from flask import Blueprint, request, jsonify
 from flask_login import login_required
 
 from models import WebhookConfig
 from config import db
-from services.notification_service import test_webhook, send_container_alert
+from services.notification_service import test_webhook
 
 notifications_bp = Blueprint('notifications', __name__)
 
@@ -38,11 +38,11 @@ def list_webhooks():
 def create_webhook():
     """Create a new webhook configuration."""
     data = request.get_json() or {}
-    
+
     required = ['name', 'webhook_type', 'webhook_url']
     if not all(k in data for k in required):
         return jsonify({'success': False, 'error': 'Missing required fields'}), 400
-    
+
     webhook = WebhookConfig(
         name=data['name'],
         webhook_type=data['webhook_type'],
@@ -54,10 +54,10 @@ def create_webhook():
         alert_cpu_threshold=data.get('alert_cpu_threshold', 90),
         alert_memory_threshold=data.get('alert_memory_threshold', 90),
     )
-    
+
     db.session.add(webhook)
     db.session.commit()
-    
+
     return jsonify({'success': True, 'id': webhook.id, 'message': 'Webhook created'})
 
 
@@ -67,7 +67,7 @@ def update_webhook(webhook_id):
     """Update a webhook configuration."""
     webhook = WebhookConfig.query.get_or_404(webhook_id)
     data = request.get_json() or {}
-    
+
     if 'name' in data:
         webhook.name = data['name']
     if 'webhook_type' in data:
@@ -86,9 +86,9 @@ def update_webhook(webhook_id):
         webhook.alert_cpu_threshold = data['alert_cpu_threshold']
     if 'alert_memory_threshold' in data:
         webhook.alert_memory_threshold = data['alert_memory_threshold']
-    
+
     db.session.commit()
-    
+
     return jsonify({'success': True, 'message': 'Webhook updated'})
 
 
@@ -99,7 +99,7 @@ def delete_webhook(webhook_id):
     webhook = WebhookConfig.query.get_or_404(webhook_id)
     db.session.delete(webhook)
     db.session.commit()
-    
+
     return jsonify({'success': True, 'message': 'Webhook deleted'})
 
 
@@ -109,7 +109,7 @@ def test_webhook_endpoint(webhook_id):
     """Send a test notification to a webhook."""
     webhook = WebhookConfig.query.get_or_404(webhook_id)
     result = test_webhook(webhook.webhook_type, webhook.webhook_url)
-    
+
     return jsonify({
         'success': result.get('success', False),
         'status_code': result.get('status_code'),
@@ -122,15 +122,15 @@ def test_webhook_endpoint(webhook_id):
 def test_webhook_url():
     """Test a webhook URL without saving it."""
     data = request.get_json() or {}
-    
+
     webhook_type = data.get('webhook_type')
     webhook_url = data.get('webhook_url')
-    
+
     if not webhook_type or not webhook_url:
         return jsonify({'success': False, 'error': 'webhook_type and webhook_url required'}), 400
-    
+
     result = test_webhook(webhook_type, webhook_url)
-    
+
     return jsonify({
         'success': result.get('success', False),
         'status_code': result.get('status_code'),

@@ -6,10 +6,9 @@ from flask import Blueprint, request, jsonify
 from flask_login import login_required
 
 from services.image_service import (
-    list_images, get_image_details, pull_image, delete_image,
-    prune_images, prune_volumes, prune_all,
-    check_image_update
+    get_image_details, check_image_update
 )
+from services.fleet_service import get_endpoint, list_images as fleet_list_images, image_action
 
 images_bp = Blueprint('images', __name__)
 
@@ -18,7 +17,10 @@ images_bp = Blueprint('images', __name__)
 @login_required
 def api_list_images():
     """List all images."""
-    images = list_images()
+    try:
+        images = fleet_list_images(get_endpoint())
+    except Exception as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 502
     if isinstance(images, dict) and 'error' in images:
         return jsonify({'success': False, 'error': images['error']}), 500
     return jsonify({'success': True, 'images': images})
@@ -28,7 +30,12 @@ def api_list_images():
 @login_required
 def api_image_detail(image_id):
     """Get detailed info for an image."""
-    details = get_image_details(image_id)
+    endpoint = get_endpoint()
+    if endpoint.kind != 'local':
+        images = fleet_list_images(endpoint)
+        details = next((item for item in images if item.get('id') == image_id or item.get('short_id') == image_id), None)
+    else:
+        details = get_image_details(image_id)
     if not details:
         return jsonify({'success': False, 'error': 'Image not found'}), 404
     if 'error' in details:
@@ -42,11 +49,14 @@ def api_pull_image():
     """Pull an image from registry."""
     data = request.get_json() or {}
     image_ref = data.get('image')
-    
+
     if not image_ref:
         return jsonify({'success': False, 'error': 'Image reference required'}), 400
-    
-    result = pull_image(image_ref)
+
+    try:
+        result = image_action(get_endpoint(), 'pull', {'image': image_ref})
+    except Exception as exc:
+        result = {'success': False, 'error': str(exc)}
     status = 200 if result['success'] else 500
     return jsonify(result), status
 
@@ -56,7 +66,10 @@ def api_pull_image():
 def api_delete_image(image_id):
     """Delete an image."""
     force = request.json.get('force', False) if request.is_json else False
-    result = delete_image(image_id, force=force)
+    try:
+        result = image_action(get_endpoint(), 'delete', {'force': force}, image_id=image_id)
+    except Exception as exc:
+        result = {'success': False, 'error': str(exc)}
     status = 200 if result['success'] else 500
     return jsonify(result), status
 
@@ -67,7 +80,10 @@ def api_prune_images():
     """Remove unused images."""
     data = request.get_json() or {}
     dangling_only = data.get('dangling_only', True)
-    result = prune_images(dangling_only=dangling_only)
+    try:
+        result = image_action(get_endpoint(), 'prune', {'dangling_only': dangling_only})
+    except Exception as exc:
+        result = {'success': False, 'error': str(exc)}
     status = 200 if result['success'] else 500
     return jsonify(result), status
 
@@ -76,7 +92,10 @@ def api_prune_images():
 @login_required
 def api_prune_volumes():
     """Remove unused volumes."""
-    result = prune_volumes()
+    try:
+        result = image_action(get_endpoint(), 'prune-volumes')
+    except Exception as exc:
+        result = {'success': False, 'error': str(exc)}
     status = 200 if result['success'] else 500
     return jsonify(result), status
 
@@ -85,8 +104,11 @@ def api_prune_volumes():
 @login_required
 def api_prune_all():
     """Prune containers, images, and volumes."""
-    result = prune_all()
-    return jsonify(result)
+    try:
+        result = image_action(get_endpoint(), 'prune-system')
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 403
 
 
 @images_bp.route('/image/check-update')
@@ -94,10 +116,12 @@ def api_prune_all():
 def api_check_image_update():
     """Check if an image has an update available."""
     image = (request.args.get('image') or '').strip()
-    
+
     if not image:
         return jsonify({'success': False, 'error': 'Image parameter required'}), 400
-    
+
+    if get_endpoint().kind != 'local':
+        return jsonify({'success': False, 'error': 'Remote update checks are performed through Compose project pull-and-deploy jobs'}), 409
     result = check_image_update(image)
     result['success'] = result['error'] is None or result['has_update'] is not None
     return jsonify(result)
@@ -107,20 +131,22 @@ def api_check_image_update():
 @login_required
 def api_check_images_updates():
     """Check multiple images for updates and persist results."""
+    if get_endpoint().kind != 'local':
+        return jsonify({'success': False, 'error': 'Remote update checks are performed through Compose projects'}), 409
     from services.update_service import check_and_save_update
-    
+
     data = request.get_json() or {}
     images = data.get('images', [])
-    
+
     if not images or not isinstance(images, list):
         return jsonify({'success': False, 'error': 'images array required'}), 400
-    
+
     if len(images) > 50:
         return jsonify({'success': False, 'error': 'Maximum 50 images per request'}), 400
-    
+
     unique_images = list(set(images))
     results = {img: check_and_save_update(img) for img in unique_images}
-    
+
     return jsonify({'success': True, 'results': results})
 
 
@@ -129,10 +155,10 @@ def api_check_images_updates():
 def api_get_stored_updates():
     """Get all stored update check results."""
     from services.update_service import get_stored_updates, get_update_settings
-    
+
     updates = get_stored_updates()
     settings = get_update_settings()
-    
+
     return jsonify({
         'success': True,
         'updates': updates,
@@ -144,8 +170,10 @@ def api_get_stored_updates():
 @login_required
 def api_check_all_updates():
     """Check all container images for updates."""
+    if get_endpoint().kind != 'local':
+        return jsonify({'success': False, 'error': 'Remote update checks are performed through Compose projects'}), 409
     from services.update_service import check_all_container_images
-    
+
     result = check_all_container_images()
     return jsonify(result)
 
@@ -155,11 +183,11 @@ def api_check_all_updates():
 def api_update_settings():
     """Get or update the update check settings."""
     from services.update_service import get_update_settings, update_update_settings
-    
+
     if request.method == 'GET':
         settings = get_update_settings()
         return jsonify({'success': True, 'settings': settings})
-    
+
     data = request.get_json() or {}
     result = update_update_settings(data)
     return jsonify(result)
@@ -170,10 +198,9 @@ def api_update_settings():
 def api_clear_updates():
     """Clear stored update statuses."""
     from services.update_service import clear_update_status
-    
+
     data = request.get_json() or {}
     image_ref = data.get('image')
-    
+
     clear_update_status(image_ref)
     return jsonify({'success': True, 'message': 'Update status cleared'})
-

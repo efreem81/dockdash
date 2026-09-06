@@ -3,14 +3,14 @@ Docker Service - Container and Image Management
 Handles all Docker/Podman API interactions
 """
 import os
-import time
 import socket
+import logging
 import docker
-import requests
 from datetime import datetime
 
 # Initialize Docker/Podman client
 _docker_client = None
+logger = logging.getLogger(__name__)
 
 def get_docker_client():
     """Get or create Docker client singleton."""
@@ -48,12 +48,12 @@ def get_container_info(container):
     state = attrs.get('State', {})
     config = attrs.get('Config', {})
     host_config = attrs.get('HostConfig', {})
-    
+
     # Parse compose labels
     labels = config.get('Labels', {})
     compose_project = labels.get('com.docker.compose.project', '')
     compose_service = labels.get('com.docker.compose.service', '')
-    
+
     # Calculate uptime
     started_at = state.get('StartedAt', '')
     uptime = None
@@ -61,13 +61,13 @@ def get_container_info(container):
         try:
             start_time = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
             uptime = (datetime.now(start_time.tzinfo) - start_time).total_seconds()
-        except Exception:
-            pass
-    
+        except (TypeError, ValueError) as exc:
+            logger.debug('Could not parse container start time %r: %s', started_at, exc)
+
     # Health check status
     health = state.get('Health', {})
     health_status = health.get('Status') if health else None
-    
+
     # Extract image information
     image = container.image
     image_tag = image.tags[0] if image and image.tags else 'unknown'
@@ -75,7 +75,7 @@ def get_container_info(container):
     image_created = None
     image_created_human = None
     image_digest = None
-    
+
     if image:
         try:
             # Get image creation date
@@ -86,7 +86,7 @@ def get_container_info(container):
                 # Calculate image age
                 age_seconds = (datetime.now(img_created_dt.tzinfo) - img_created_dt).total_seconds()
                 image_created_human = _format_age(age_seconds)
-            
+
             # Get image digest (short form)
             repo_digests = image.attrs.get('RepoDigests', [])
             if repo_digests:
@@ -94,9 +94,9 @@ def get_container_info(container):
                 digest_full = repo_digests[0].split('@')[-1] if '@' in repo_digests[0] else ''
                 if digest_full.startswith('sha256:'):
                     image_digest = digest_full[7:19]  # First 12 chars of digest
-        except Exception:
-            pass
-    
+        except (AttributeError, IndexError, TypeError, ValueError) as exc:
+            logger.debug('Could not read image metadata for %s: %s', container.name, exc)
+
     info = {
         'id': container.short_id,
         'full_id': container.id,
@@ -123,12 +123,12 @@ def get_container_info(container):
         'networks': list(attrs.get('NetworkSettings', {}).get('Networks', {}).keys()),
         'labels': labels,
     }
-    
+
     # Get port mappings
     ports = attrs.get('NetworkSettings', {}).get('Ports', {})
     host_ip = get_host_ip()
     seen_host_ports = set()
-    
+
     # Check if this container uses another container's network (network_mode: container:xxx)
     network_mode = host_config.get('NetworkMode', '')
     network_container_name = None
@@ -142,9 +142,9 @@ def get_container_info(container):
                 net_container = client.containers.get(network_container_ref)
                 net_attrs = net_container.attrs
                 ports = net_attrs.get('NetworkSettings', {}).get('Ports', {}) or {}
-        except Exception:
-            pass
-    
+        except docker.errors.DockerException as exc:
+            logger.debug('Could not resolve network provider %s: %s', network_container_ref, exc)
+
     for container_port, bindings in ports.items():
         if bindings:
             for binding in bindings:
@@ -162,7 +162,7 @@ def get_container_info(container):
                         port_info['via_container'] = network_container_name
                     info['ports'].append(port_info)
                     info['urls'].append(port_info['url'])
-    
+
     return info
 
 
@@ -186,14 +186,14 @@ def _format_age(seconds):
     """Format age in seconds to human readable string (e.g., '3 months ago')."""
     if seconds is None:
         return None
-    
+
     minutes = seconds / 60
     hours = minutes / 60
     days = hours / 24
     weeks = days / 7
     months = days / 30
     years = days / 365
-    
+
     if years >= 1:
         y = int(years)
         return f"{y} year{'s' if y != 1 else ''} ago"
@@ -275,22 +275,22 @@ def _parse_stats(stats):
                    stats['precpu_stats']['system_cpu_usage']
     cpu_count = stats['cpu_stats'].get('online_cpus', 1)
     cpu_percent = (cpu_delta / system_delta) * cpu_count * 100 if system_delta > 0 else 0
-    
+
     # Memory usage
     mem_usage = stats['memory_stats'].get('usage', 0)
     mem_limit = stats['memory_stats'].get('limit', 1)
     mem_percent = (mem_usage / mem_limit) * 100 if mem_limit > 0 else 0
-    
+
     # Network I/O
     networks = stats.get('networks', {})
     net_rx = sum(n.get('rx_bytes', 0) for n in networks.values())
     net_tx = sum(n.get('tx_bytes', 0) for n in networks.values())
-    
+
     # Block I/O
     blk_stats = stats.get('blkio_stats', {}).get('io_service_bytes_recursive', []) or []
     blk_read = sum(s['value'] for s in blk_stats if s.get('op') == 'read')
     blk_write = sum(s['value'] for s in blk_stats if s.get('op') == 'write')
-    
+
     return {
         'cpu_percent': round(cpu_percent, 2),
         'memory_usage': mem_usage,
@@ -366,4 +366,3 @@ def prune_containers():
         }
     except Exception as e:
         return {'success': False, 'error': str(e)}
-

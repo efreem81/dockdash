@@ -16,7 +16,7 @@ This document outlines security best practices, known vulnerabilities, and imple
 - [ ] Rate limiting configured
 - [ ] HTTPS enforced
 - [x] Session timeout configured (via `SESSION_LIFETIME_HOURS`)
-- [ ] Strong SECRET_KEY set (recommended)
+- [x] Strong SECRET_KEY required outside testing
 - [ ] Audit logging enabled
 - [ ] Regular backups configured
 - [ ] Security headers configured
@@ -50,10 +50,10 @@ environment:
 server {
     listen 443 ssl http2;
     server_name dockdash.example.com;
-    
+
     ssl_certificate /path/to/cert.pem;
     ssl_certificate_key /path/to/key.pem;
-    
+
     location / {
         proxy_pass http://localhost:9999;
         proxy_set_header Host $host;
@@ -190,7 +190,7 @@ services:
   dockdash:
     depends_on:
       - redis
-  
+
   redis:
     image: redis:7-alpine
     volumes:
@@ -216,7 +216,7 @@ class AuditLog(db.Model):
     ip_address = db.Column(db.String(45))
     user_agent = db.Column(db.String(500))
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-    
+
     user = db.relationship('User', backref='audit_logs')
 ```
 
@@ -230,7 +230,7 @@ def audit_log(action):
         @wraps(f)
         def decorated_function(*args, **kwargs):
             result = f(*args, **kwargs)
-            
+
             # Log the action
             log = AuditLog(
                 user_id=current_user.id if current_user.is_authenticated else None,
@@ -241,7 +241,7 @@ def audit_log(action):
             )
             db.session.add(log)
             db.session.commit()
-            
+
             return result
         return decorated_function
     return decorator
@@ -295,11 +295,11 @@ app.config['SESSION_REDIS'] = redis.from_url('redis://localhost:6379')
 @login_required
 def change_password():
     # ... password change logic ...
-    
+
     # Invalidate all other sessions
     session.clear()
     login_user(current_user)
-    
+
     flash('Password changed. All other sessions have been logged out.', 'info')
 ```
 
@@ -370,13 +370,13 @@ class ContainerActionSchema(Schema):
 @login_required
 def add_url():
     schema = URLSchema()
-    
+
     try:
         data = schema.load(request.form)
     except ValidationError as err:
         flash(f'Validation error: {err.messages}', 'error')
         return redirect(url_for('add_url'))
-    
+
     # Use validated data
     shared_url = SharedURL(**data, created_by=current_user.id)
     db.session.add(shared_url)
@@ -410,7 +410,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - docker-proxy
-  
+
   dockdash:
     image: dockdash:latest
     environment:
@@ -444,7 +444,7 @@ services:
       DATABASE_URL: postgresql://user:pass@postgres:5432/dockdash
     depends_on:
       - postgres
-  
+
   postgres:
     image: postgres:15-alpine
     environment:
@@ -540,9 +540,9 @@ bantime = 3600
 def login():
     username = request.form.get('username')
     password = request.form.get('password')
-    
+
     user = User.query.filter_by(username=username).first()
-    
+
     if user and user.check_password(password):
         login_user(user)
         app.logger.info(f'Successful login: {username} from {request.remote_addr}')
@@ -699,5 +699,5 @@ Include:
 
 ---
 
-**Last Updated:** February 1, 2026  
+**Last Updated:** February 1, 2026
 **Next Review:** March 1, 2026

@@ -46,8 +46,8 @@ def get_effective_log_level(app=None) -> str:
             from models import AppSettings
             settings = AppSettings.get_settings()
             return normalize_level(getattr(settings, 'log_level', None), default=normalize_level(os.environ.get('APP_LOG_LEVEL')))
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.getLogger(__name__).debug('Could not read database log level: %s', exc)
 
     return normalize_level(os.environ.get('APP_LOG_LEVEL'), default='INFO')
 
@@ -76,8 +76,8 @@ def configure_app_logging(app=None, level: Optional[str] = None) -> str:
     try:
         from urllib3.exceptions import InsecureRequestWarning
         warnings.filterwarnings('ignore', category=InsecureRequestWarning)
-    except Exception:
-        pass
+    except ImportError as exc:
+        logging.getLogger(__name__).debug('Could not configure urllib3 warning filter: %s', exc)
 
     # Keep noisy libraries quieter unless explicitly debugging.
     if numeric_level > logging.DEBUG:
@@ -87,8 +87,8 @@ def configure_app_logging(app=None, level: Optional[str] = None) -> str:
     if app is not None:
         try:
             app.logger.setLevel(numeric_level)
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.getLogger(__name__).debug('Could not update Flask logger level: %s', exc)
 
     return applied_level
 

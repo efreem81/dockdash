@@ -164,8 +164,8 @@ def _wait_for_running(container, timeout_seconds: float = 6.0) -> bool:
             state = (container.attrs or {}).get('State') or {}
             if state.get('Status') in ('exited', 'dead'):
                 return False
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug('Waiting for container state failed: %s', exc)
         time.sleep(0.5)
     try:
         container.reload()
@@ -177,40 +177,40 @@ def _wait_for_running(container, timeout_seconds: float = 6.0) -> bool:
 def recreate_container(container_id, pull_latest=True, skip_scan=False):
     """
     Recreate a container with the same configuration but optionally updated image.
-    
+
     Args:
         container_id: ID or name of the container to recreate
         pull_latest: Whether to pull the latest image before recreating
         skip_scan: Whether to skip vulnerability scanning (useful for batch updates)
-    
+
     Returns:
         Dictionary with success status and new container info
     """
     client = get_docker_client()
     if not client:
         return {'success': False, 'error': 'Docker not available'}
-    
+
     try:
         # Get the existing container
         container = client.containers.get(container_id)
         try:
             container.reload()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug('Initial container refresh failed: %s', exc)
         old_name = container.name
         attrs = container.attrs
         config = attrs.get('Config', {})
         host_config = attrs.get('HostConfig', {})
         network_settings = attrs.get('NetworkSettings', {})
-        
+
         # Extract image reference
         image_ref = config.get('Image', '')
         if not image_ref:
             image_ref = container.image.tags[0] if container.image.tags else None
-        
+
         if not image_ref:
             return {'success': False, 'error': 'Cannot determine image for container'}
-        
+
         # Pull latest image if requested
         pulled_new = False
         if pull_latest:
@@ -222,7 +222,7 @@ def recreate_container(container_id, pull_latest=True, skip_scan=False):
             except Exception as e:
                 # Continue even if pull fails - use existing image
                 logger.warning('Could not pull latest image for %s: %s', image_ref, e)
-        
+
         # Recreate in a rollback-safe way:
         # 1) rename old container to free the name
         # 2) stop old container to free ports
@@ -258,10 +258,10 @@ def recreate_container(container_id, pull_latest=True, skip_scan=False):
                 host_cfg_source['NetworkMode'] = primary_network_mode
             container_network_mode = host_cfg_source.get('NetworkMode')
             is_container_network = isinstance(container_network_mode, str) and container_network_mode.startswith('container:')
-            
+
             # Build host_config after determining is_container_network so we can skip port_bindings if needed
             host_cfg_obj = _build_host_config(client, host_cfg_source, primary_network, is_container_network)
-            
+
             if is_container_network:
                 networking_config = None
 
@@ -336,8 +336,8 @@ def recreate_container(container_id, pull_latest=True, skip_scan=False):
                 if new_container is not None:
                     try:
                         new_container.remove(v=False, force=True)
-                    except Exception:
-                        pass
+                    except Exception as cleanup_error:
+                        logger.warning('Could not remove failed replacement container: %s', cleanup_error)
             finally:
                 try:
                     if renamed_old:
@@ -347,7 +347,7 @@ def recreate_container(container_id, pull_latest=True, skip_scan=False):
                 except Exception as re:
                     rollback_error = f"{rollback_error}; rollback_failed={re}"
             return {'success': False, 'error': rollback_error}
-        
+
         # Scan the image after recreation unless skip_scan=True (batch updates)
         scan_result = None
         if not skip_scan:
@@ -361,14 +361,14 @@ def recreate_container(container_id, pull_latest=True, skip_scan=False):
                 save_scan_result(image_ref, scan_result, duration)
             except Exception as e:
                 logger.warning('Could not scan image %s: %s', image_ref, e)
-        
+
         # Clear the update status since we just pulled/recreated with latest image
         try:
             from services.update_service import clear_update_status
             clear_update_status(image_ref)
         except Exception as e:
             logger.warning('Could not clear update status for %s: %s', image_ref, e)
-        
+
         return {
             'success': True,
             'message': f'Container {old_name} recreated successfully',
@@ -378,7 +378,7 @@ def recreate_container(container_id, pull_latest=True, skip_scan=False):
             'started': started,
             'vulnerability_scan': scan_result.get('summary') if scan_result and scan_result.get('success') else None
         }
-        
+
     except Exception as e:
         logger.exception('recreate_container failed for %s: %s', container_id, e)
         return {'success': False, 'error': str(e)}
@@ -387,7 +387,7 @@ def recreate_container(container_id, pull_latest=True, skip_scan=False):
 def _extract_container_config(config, host_config, network_settings):
     """Extract container creation parameters from existing container config."""
     kwargs = {}
-    
+
     # Basic config
     if config.get('Cmd'):
         kwargs['command'] = config['Cmd']
@@ -403,7 +403,7 @@ def _extract_container_config(config, host_config, network_settings):
         kwargs['labels'] = config['Labels']
     if config.get('ExposedPorts'):
         kwargs['ports'] = config['ExposedPorts']
-    
+
     # Host config
     if host_config.get('Binds'):
         kwargs['volumes'] = host_config['Binds']
@@ -429,10 +429,10 @@ def _extract_container_config(config, host_config, network_settings):
         kwargs['mem_limit'] = host_config['Memory']
     if host_config.get('CpuShares') and host_config['CpuShares'] > 0:
         kwargs['cpu_shares'] = host_config['CpuShares']
-    
+
     # Detach by default for recreated containers
     kwargs['detach'] = True
-    
+
     return kwargs
 
 
@@ -441,13 +441,13 @@ def get_container_config(container_id):
     client = get_docker_client()
     if not client:
         return {'success': False, 'error': 'Docker not available'}
-    
+
     try:
         container = client.containers.get(container_id)
         attrs = container.attrs
         config = attrs.get('Config', {})
         host_config = attrs.get('HostConfig', {})
-        
+
         return {
             'success': True,
             'name': container.name,

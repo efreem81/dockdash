@@ -110,9 +110,21 @@ ensure_env_file() {
   [[ -n "$host_ip" && "$host_ip" != "localhost" ]] && log "Set HOST_IP=${host_ip}"
 }
 
+validate_env_file() {
+  local default_password
+  default_password="$(grep -E '^DEFAULT_PASSWORD=' .env | cut -d= -f2- || true)"
+  case "$default_password" in
+    ''|dockdash|change-me*|replace-me*)
+      error "Set a unique DEFAULT_PASSWORD in .env before deployment."
+      exit 1
+      ;;
+  esac
+  chmod 600 .env
+}
+
 # Ensure data directory exists
 mkdir -p data
-chmod 755 data
+chmod 700 data
 
 # Pull latest code if in a git repo
 if [[ -d .git ]]; then
@@ -122,6 +134,12 @@ fi
 
 # Ensure .env exists with proper values
 ensure_env_file
+validate_env_file
+
+if ! docker network inspect dockdash-control >/dev/null 2>&1; then
+  log "Creating private dockdash-control bridge"
+  docker network create dockdash-control >/dev/null
+fi
 
 # Build and deploy
 SHOW_LOGS=false

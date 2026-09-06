@@ -21,6 +21,14 @@ A sleek, feature-rich container management dashboard with a nautical theme. Work
 - **💚 Health Checks**: Visual health status indicators for containers with health checks
 - **📦 Compose Grouping**: Containers grouped by Docker Compose project
 
+### Docker Fleet & Compose Deployments
+- **🖥️ Multi-host Docker**: Manage unlimited Docker hosts through mTLS-authenticated DockDash agents
+- **📦 Compose Orchestration**: Discover and adopt existing Compose projects from their owning directories
+- **🚀 Safe Deployments**: Validate, pull, deploy, start, stop, restart, and scale Compose projects
+- **🧭 Deployment Sources**: Adopt host projects or create Git-backed and DockDash-managed deployments
+- **🩺 Deployment Checks**: Required-mount, capacity, Docker health, and optional HTTP application checks
+- **🕰️ Revision Evidence**: Record configuration digests, image IDs, and durable operation history for rollback assistance
+
 ### Image Management
 - **⬆️ Update Checking**: Check if container images have updates available
 - **🧹 Cleanup Tools**: Remove dangling images, unused images, and stopped containers
@@ -68,22 +76,22 @@ A sleek, feature-rich container management dashboard with a nautical theme. Work
    ```
 
 3. **Access the Web UI**
-   
+
    Open your browser and navigate to:
    ```
    http://localhost:9999
    ```
-   
+
    Or from another device on your network:
    ```
    http://<host-ip>:9999
    ```
 
 4. **Login**
-   - **Username**: `admin`
-   - **Password**: `dockdash`
 
-   > ⚠️ **Important**: Change the default password after first login!
+   Set a unique `DEFAULT_PASSWORD` in `.env` before the first deployment. The
+   deployment script refuses blank and known default passwords. The initial
+   username defaults to `admin`.
 
 ### Using with Podman
 
@@ -110,9 +118,9 @@ sudo systemctl enable --now podman.socket
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SECRET_KEY` | (generated) | Flask secret key for sessions |
+| `SECRET_KEY` | required/generated | Flask secret key for sessions |
 | `DEFAULT_USERNAME` | `admin` | Default admin username |
-| `DEFAULT_PASSWORD` | `dockdash` | Default admin password |
+| `DEFAULT_PASSWORD` | required | Initial admin password; blank and known defaults are rejected |
 | `DOCKDASH_PORT` | `9999` | Host port to expose DockDash on |
 | `HOST_IP` | (auto-detected) | LAN IP used for container link generation |
 | `DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker/Podman socket path |
@@ -135,13 +143,75 @@ AUTO_START_MONITORING=1
 # SESSION_COOKIE_SECURE=1
 ```
 
+### Secure Docker fleet setup
+
+Fleet agents are separate from the web controller. They never expose the
+Docker socket directly and accept only mutually authenticated TLS connections.
+Private keys and certificates are ignored by Git and must remain outside the
+repository.
+
+1. Create the private controller bridge and controller CA/client identity:
+
+   ```bash
+   docker network create dockdash-control
+   sudo install -d -m 0700 /etc/dockdash-pki
+   sudo agent/scripts/create-ca-controller.sh /etc/dockdash-pki
+   install -d -m 0700 data/pki
+   sudo install -m 0444 /etc/dockdash-pki/ca.crt data/pki/ca.crt
+   sudo install -m 0444 /etc/dockdash-pki/controller.crt data/pki/controller.crt
+   sudo install -m 0400 /etc/dockdash-pki/controller.key data/pki/controller.key
+   ```
+
+   Keep `/etc/dockdash-pki/ca.key` root-only and offline except while signing
+   or rotating certificates. Never copy it to an agent.
+
+2. On each agent host, generate its private key and CSR locally:
+
+   ```bash
+   sudo install -d -m 0700 /etc/dockdash-agent
+   sudo agent/scripts/create-server-csr.sh /etc/dockdash-agent HOSTNAME
+   ```
+
+3. Transfer only `server.csr` to the CA host, review its subject, and sign it
+   with the host's exact management IP or DNS name:
+
+   ```bash
+   sudo agent/scripts/sign-server-csr.sh /etc/dockdash-pki server.csr server.crt IP:192.0.2.10
+   ```
+
+   Return only `server.crt` and `ca.crt` to `/etc/dockdash-agent`. The agent's
+   `server.key` never leaves that host. Verify `sslserver` and `sslclient`
+   purposes with `openssl verify` before deployment.
+
+4. Deploy `agent/compose.controller.yaml` on the controller host or
+   `agent/compose.yaml`/`agent/compose.opt-only.yaml` on a remote host. Remote
+   deployments require `DOCKDASH_AGENT_BIND` to be the exact management IP.
+
+5. Before exposing TCP/9002, add a persistent host-forwarding rule that permits
+   only the DockDash controller address, followed by a drop for other sources.
+   Docker-published ports traverse `DOCKER-USER`, not the normal INPUT/UFW
+   policy. Preserve `RELATED,ESTABLISHED` traffic before the drop, verify from
+   both an allowed and denied source, and confirm container egress afterward.
+
+6. Add the endpoint in **Fleet**, test it, and run **Discover / adopt**. The
+   certificate SAN must match the URL exactly. Plain HTTP, URL credentials and
+   redirect-based fallback are rejected.
+
+Certificates are issued for 397 days by the included scripts. Rotate them
+before expiry by generating a new local key/CSR and deploying the signed leaf
+certificate during a controlled agent restart. Revocation is performed by
+removing trust or issuing a replacement CA/controller identity; the agent does
+not use an online CRL or OCSP responder. Back up the CA and controller identity
+encrypted and separately from the managed hosts.
+
+The `dockdash-worker` service serializes Compose mutations, rejects an accidental
+second worker through a shared OS lock, and recovers an interrupted `running` job
+back into the queue after restart.
+
 ### Vulnerability Scanning
 
-DockDash can scan container images for CVEs using [Trivy](https://trivy.dev/). To enable:
-
-1. Install Trivy on the host or mount it into the container
-2. The scanner will automatically detect Trivy availability
-3. Access via **Settings → Vulnerability Scanning**
+DockDash bundles a commit-pinned Trivy binary in its controller image. Access
+image scanning through **Settings → Vulnerability Scanning**.
 
 ## 📖 Usage
 
@@ -262,6 +332,10 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
+
+# Required on first startup; never use these example values in production.
+export SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+export DEFAULT_PASSWORD="choose-a-unique-password"
 
 # Initialize database
 python init_db.py
