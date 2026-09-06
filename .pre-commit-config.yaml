@@ -1,0 +1,58 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.12.12
+    hooks:
+      - id: ruff-check
+        args: [--no-cache]
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.8.6
+    hooks:
+      - id: bandit
+        args: [-q]
+        exclude: ^tests/
+  - repo: https://github.com/pypa/pip-audit
+    rev: v2.9.0
+    hooks:
+      - id: pip-audit
+        name: pip-audit controller requirements
+        args: [-r, requirements.txt]
+        pass_filenames: false
+      - id: pip-audit
+        name: pip-audit agent requirements
+        args: [-r, agent/requirements.txt]
+        pass_filenames: false
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+  - repo: local
+    hooks:
+      - id: unit-tests
+        name: run controller and agent unit tests
+        language: system
+        pass_filenames: false
+        entry: scripts/run-tests.sh
+      - id: javascript-syntax
+        name: validate JavaScript syntax
+        language: system
+        pass_filenames: false
+        entry: scripts/check-javascript.sh
+      - id: compose-config
+        name: validate Docker Compose definitions
+        language: system
+        pass_filenames: false
+        entry: bash -c 'SECRET_KEY=precommit DEFAULT_PASSWORD=precommit docker compose config --quiet && DOCKDASH_AGENT_BIND=127.0.0.1 docker compose -f agent/compose.yaml config --quiet && docker compose -f agent/compose.controller.yaml config --quiet && DOCKDASH_AGENT_BIND=127.0.0.1 docker compose -f agent/compose.opt-only.yaml config --quiet'
+      - id: container-security
+        name: build, scan, and mTLS-test container images
+        language: system
+        pass_filenames: false
+        entry: scripts/validate-container-security.sh
