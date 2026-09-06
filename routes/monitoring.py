@@ -42,21 +42,21 @@ def api_stop_monitoring():
 def api_update_thresholds():
     """Update monitoring thresholds."""
     data = request.get_json() or {}
-    
+
     cpu = data.get('cpu_threshold')
     memory = data.get('memory_threshold')
-    
+
     if cpu is not None:
         try:
             cpu = float(cpu)
         except (ValueError, TypeError):
             return jsonify({'success': False, 'error': 'Invalid CPU threshold'}), 400
-    
+
     if memory is not None:
         try:
             memory = float(memory)
         except (ValueError, TypeError):
             return jsonify({'success': False, 'error': 'Invalid memory threshold'}), 400
-    
+
     result = update_thresholds(cpu=cpu, memory=memory)
     return jsonify(result)

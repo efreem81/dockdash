@@ -44,13 +44,13 @@ function showSettingsTab(tabName) {
         btn.classList.remove('active');
     });
     event.target.classList.add('active');
-    
+
     // Update tab content
     document.querySelectorAll('.settings-tab-content').forEach(content => {
         content.style.display = 'none';
     });
     document.getElementById(`tab-${tabName}`).style.display = 'block';
-    
+
     // Store preference
     localStorage.setItem('dockdash-settings-tab', tabName);
 }
@@ -63,7 +63,7 @@ async function loadWebhooks() {
     try {
         const response = await fetch('/api/webhooks');
         const data = await response.json();
-        
+
         const container = document.getElementById('webhooksList');
         if (data.webhooks && data.webhooks.length > 0) {
             container.innerHTML = data.webhooks.map(w => `
@@ -120,12 +120,12 @@ async function editWebhook(id) {
         const response = await fetch('/api/webhooks');
         const data = await response.json();
         const webhook = data.webhooks?.find(w => w.id === id);
-        
+
         if (!webhook) {
             showToast('error', 'Webhook not found');
             return;
         }
-        
+
         document.getElementById('webhookModalTitle').textContent = '✏️ Edit Webhook';
         document.getElementById('webhookId').value = webhook.id;
         document.getElementById('webhookName').value = webhook.name || '';
@@ -160,12 +160,12 @@ async function saveWebhook() {
         alert_memory_threshold: parseInt(document.getElementById('alertMemory').value),
         enabled: true
     };
-    
+
     if (!data.name || !data.webhook_url) {
         showToast('error', 'Name and URL are required');
         return;
     }
-    
+
     try {
         const url = id ? `/api/webhook/${id}` : '/api/webhook';
         const method = id ? 'PUT' : 'POST';
@@ -175,7 +175,7 @@ async function saveWebhook() {
             body: JSON.stringify(data)
         });
         const result = await response.json();
-        
+
         if (result.success) {
             showToast('success', id ? 'Webhook updated' : 'Webhook created');
             closeWebhookModal();
@@ -191,14 +191,14 @@ async function saveWebhook() {
 async function testWebhook() {
     const webhookType = document.getElementById('webhookType').value;
     const webhookUrl = document.getElementById('webhookUrl').value;
-    
+
     if (!webhookUrl) {
         showToast('error', 'URL is required');
         return;
     }
-    
+
     showToast('info', 'Sending test notification...');
-    
+
     try {
         const response = await fetch('/api/webhook/test', {
             method: 'POST',
@@ -206,7 +206,7 @@ async function testWebhook() {
             body: JSON.stringify({ webhook_type: webhookType, webhook_url: webhookUrl })
         });
         const result = await response.json();
-        
+
         if (result.success) {
             showToast('success', 'Test notification sent!');
         } else {
@@ -219,14 +219,14 @@ async function testWebhook() {
 
 async function testWebhookById(id) {
     showToast('info', 'Sending test notification...');
-    
+
     try {
         const response = await fetch(`/api/webhook/${id}/test`, {
             method: 'POST',
             headers: csrfHeaders()
         });
         const result = await response.json();
-        
+
         if (result.success) {
             showToast('success', 'Test notification sent!');
         } else {
@@ -239,16 +239,16 @@ async function testWebhookById(id) {
 
 async function deleteWebhook(id) {
     if (!confirm('Delete this webhook?\\n\\nYou will no longer receive notifications from it.')) return;
-    
+
     showToast('info', 'Deleting webhook...');
-    
+
     try {
         const response = await fetch(`/api/webhook/${id}`, {
             method: 'DELETE',
             headers: csrfHeaders()
         });
         const result = await response.json();
-        
+
         if (result.success) {
             showToast('success', 'Webhook deleted');
             loadWebhooks();
@@ -268,14 +268,14 @@ async function loadUpdateCheckStatus() {
     try {
         const response = await fetch('/api/updates/settings');
         const data = await response.json();
-        
+
         const indicator = document.getElementById('updateCheckIndicator');
         const statusText = document.getElementById('updateCheckStatusText');
         const lastCheckInfo = document.getElementById('lastUpdateCheckInfo');
-        
+
         if (indicator) indicator.textContent = '✅';
         if (statusText) statusText.textContent = 'Update checks available';
-        
+
         if (data.success && data.settings) {
             loadUpdateSettings(data.settings);
             if (data.settings.last_check_completed) {
@@ -301,13 +301,13 @@ function loadUpdateSettings(settings) {
     const scheduleHour = document.getElementById('updateScheduleHour');
     const scheduleMinute = document.getElementById('updateScheduleMinute');
     const scheduleDay = document.getElementById('updateScheduleDay');
-    
+
     if (updateEnabled) updateEnabled.checked = settings.enabled || false;
     if (scheduleType) scheduleType.value = settings.schedule_type || 'daily';
     if (scheduleHour) scheduleHour.value = settings.schedule_hour ?? 4;
     if (scheduleMinute) scheduleMinute.value = settings.schedule_minute ?? 0;
     if (scheduleDay) scheduleDay.value = settings.schedule_day ?? 0;
-    
+
     updateUpdateScheduleUI();
 }
 
@@ -332,7 +332,7 @@ async function saveUpdateSettings() {
         schedule_minute: parseInt(document.getElementById('updateScheduleMinute')?.value || 0),
         schedule_day: parseInt(document.getElementById('updateScheduleDay')?.value || 0)
     };
-    
+
     try {
         const response = await fetch('/api/updates/settings', {
             method: 'POST',
@@ -342,7 +342,7 @@ async function saveUpdateSettings() {
             },
             body: JSON.stringify(data)
         });
-        
+
         const result = await response.json();
         if (result.success) {
             showToast('success', 'Update check settings saved');
@@ -359,7 +359,7 @@ async function runUpdateCheck() {
     const originalText = btn.innerHTML;
     btn.innerHTML = '⏳ Checking...';
     btn.disabled = true;
-    
+
     try {
         const response = await fetch('/api/updates/check-all', {
             method: 'POST',
@@ -369,7 +369,7 @@ async function runUpdateCheck() {
             },
             body: JSON.stringify({})
         });
-        
+
         const result = await response.json();
         if (result.success) {
             const msg = `Checked ${result.images_checked} images. ${result.updates_found} update(s) available.`;
@@ -394,12 +394,12 @@ async function loadScannerStatus() {
     try {
         const response = await fetch('/api/vulnerabilities/status');
         const data = await response.json();
-        
+
         const indicator = document.getElementById('scannerIndicator');
         const statusText = document.getElementById('scannerStatusText');
         const lastScanInfo = document.getElementById('lastScanInfo');
         const scanBtn = document.getElementById('fullScanBtn');
-        
+
         if (data.available) {
             indicator.textContent = '✅';
             statusText.textContent = 'Trivy scanner is available';
@@ -409,7 +409,7 @@ async function loadScannerStatus() {
             statusText.innerHTML = 'Trivy not installed. <a href="https://trivy.dev" target="_blank">Install Trivy</a>';
             if (scanBtn) scanBtn.disabled = true;
         }
-        
+
         // Load scan settings and show last scan info
         if (data.settings) {
             loadScanSettings(data.settings);
@@ -439,7 +439,7 @@ function loadScanSettings(settings) {
     const scheduleDay = document.getElementById('scheduleDay');
     const severityFilter = document.getElementById('severityFilter');
     const logLevel = document.getElementById('logLevel');
-    
+
     if (scanEnabled) scanEnabled.checked = settings.enabled || false;
     if (scheduleType) scheduleType.value = settings.schedule_type || 'daily';
     if (scheduleHour) scheduleHour.value = settings.schedule_hour ?? 3;
@@ -447,7 +447,7 @@ function loadScanSettings(settings) {
     if (scheduleDay) scheduleDay.value = settings.schedule_day ?? 0;
     if (severityFilter) severityFilter.value = settings.severity_filter || 'CRITICAL,HIGH,MEDIUM,LOW';
     if (logLevel) logLevel.value = settings.log_level || 'INFO';
-    
+
     updateScheduleUI();
 }
 
@@ -469,7 +469,7 @@ async function saveScanSettings() {
         severity_filter: document.getElementById('severityFilter')?.value || 'CRITICAL,HIGH,MEDIUM,LOW',
         log_level: document.getElementById('logLevel')?.value || 'INFO'
     };
-    
+
     try {
         const response = await fetch('/api/vulnerabilities/settings', {
             method: 'POST',
@@ -477,7 +477,7 @@ async function saveScanSettings() {
             body: JSON.stringify(data)
         });
         const result = await response.json();
-        
+
         if (result.success) {
             showToast('success', 'Scan settings saved');
         } else {
@@ -534,7 +534,7 @@ async function runFullScan() {
     const progressDiv = document.getElementById('scanProgress');
     const progressFill = document.getElementById('scanProgressFill');
     const progressText = document.getElementById('scanProgressText');
-    
+
     if (btn) {
         btn.disabled = true;
         btn.textContent = '⏳ Starting...';
@@ -542,7 +542,7 @@ async function runFullScan() {
     if (progressDiv) progressDiv.style.display = 'block';
     if (progressFill) progressFill.style.width = '0%';
     if (progressText) progressText.textContent = 'Starting scan...';
-    
+
     try {
         const response = await fetch('/api/vulnerabilities/scan-all', {
             method: 'POST',
@@ -550,18 +550,18 @@ async function runFullScan() {
             body: JSON.stringify({})
         });
         const data = await response.json();
-        
+
         if (data.success) {
             const summary = data.total_summary || {};
             if (progressText) {
-                progressText.textContent = 
+                progressText.textContent =
                     `Complete! ${data.images_scanned || 0} images scanned. ` +
                     `${summary.critical || 0}C / ${summary.high || 0}H / ${summary.medium || 0}M / ${summary.low || 0}L`;
             }
             if (progressFill) progressFill.style.width = '100%';
-            
+
             showToast('success', `Scan complete! Found ${summary.critical || 0} Critical, ${summary.high || 0} High vulnerabilities.`);
-            
+
             // Refresh status after a delay
             setTimeout(() => loadScannerStatus(), 1000);
         } else {
@@ -588,7 +588,7 @@ async function loadMonitoringStatus() {
     try {
         const response = await fetch('/api/monitoring/status');
         const data = await response.json();
-        
+
         const isRunning = data.running;
         const indicator = document.getElementById('monitoringIndicator');
         const statusText = document.getElementById('monitoringStatusText');
@@ -596,7 +596,7 @@ async function loadMonitoringStatus() {
         const stopBtn = document.getElementById('stopMonitoringBtn');
         const cpuThreshold = document.getElementById('cpuThreshold');
         const memoryThreshold = document.getElementById('memoryThreshold');
-        
+
         if (indicator) indicator.textContent = isRunning ? '✅' : '⏸️';
         if (statusText) statusText.textContent = isRunning ? 'Monitoring active' : 'Monitoring stopped';
         if (startBtn) startBtn.style.display = isRunning ? 'none' : 'inline-block';
@@ -616,7 +616,7 @@ async function startMonitoring() {
             headers: csrfHeaders()
         });
         const data = await response.json();
-        
+
         if (data.success) {
             showToast('success', 'Monitoring started');
             loadMonitoringStatus();
@@ -635,7 +635,7 @@ async function stopMonitoring() {
             headers: csrfHeaders()
         });
         const data = await response.json();
-        
+
         if (data.success) {
             showToast('success', 'Monitoring stopped');
             loadMonitoringStatus();
@@ -650,10 +650,10 @@ async function stopMonitoring() {
 async function updateThresholds() {
     const cpuThreshold = document.getElementById('cpuThreshold');
     const memoryThreshold = document.getElementById('memoryThreshold');
-    
+
     const cpu = parseInt(cpuThreshold?.value || 80);
     const memory = parseInt(memoryThreshold?.value || 85);
-    
+
     try {
         const response = await fetch('/api/monitoring/thresholds', {
             method: 'POST',
@@ -661,7 +661,7 @@ async function updateThresholds() {
             body: JSON.stringify({ cpu_threshold: cpu, memory_threshold: memory })
         });
         const data = await response.json();
-        
+
         if (data.success) {
             showToast('success', 'Thresholds updated');
         } else {
@@ -714,14 +714,14 @@ async function pruneAll() {
 
 async function doPrune(url, type, btn, originalText) {
     showToast('info', `Pruning ${type}...`);
-    
+
     try {
         const response = await fetch(url, {
             method: 'POST',
             headers: csrfHeaders()
         });
         const result = await response.json();
-        
+
         if (result.success) {
             const space = result.space_reclaimed_human || result.total_space_reclaimed_human || '0 B';
             showToast('success', `Cleaned ${type}. Reclaimed: ${space}`, 5000);
@@ -745,11 +745,11 @@ async function doPrune(url, type, btn, originalText) {
 async function showImagesModal() {
     document.getElementById('imagesModal').style.display = 'flex';
     document.getElementById('imagesContent').innerHTML = '<div class="loading">Loading images...</div>';
-    
+
     try {
         const response = await fetch('/api/images');
         const data = await response.json();
-        
+
         if (data.success && data.images) {
             const html = `
                 <table class="inspect-table">
@@ -786,14 +786,14 @@ function closeImagesModal(e) {
 
 async function deleteImage(imageId) {
     if (!confirm('Delete this image?')) return;
-    
+
     try {
         const response = await fetch(`/api/image/${imageId}/delete`, {
             method: 'POST',
             headers: csrfHeaders()
         });
         const result = await response.json();
-        
+
         if (result.success) {
             showToast('success', 'Image deleted');
             showImagesModal();
@@ -816,7 +816,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const tabBtn = document.querySelector(`.settings-tabs .tab-btn[onclick*="${savedTab}"]`);
         if (tabBtn) tabBtn.click();
     }
-    
+
     // Load all data
     loadWebhooks();
     loadMonitoringStatus();

@@ -25,7 +25,7 @@
                 <h2>🔔 Webhook Notifications</h2>
                 <p class="section-desc">Get alerted when containers stop, become unhealthy, or exceed resource thresholds.</p>
             </div>
-            
+
             <div class="webhooks-list" id="webhooksList">
                 <div class="loading">Loading webhooks...</div>
             </div>
@@ -66,7 +66,7 @@
             <div class="settings-card">
                 <h3>⏰ Scheduled Update Checks</h3>
                 <p class="card-desc">Automatically check for image updates on a schedule.</p>
-                
+
                 <div class="form-row">
                     <div class="form-group">
                         <label class="toggle-label">
@@ -153,7 +153,7 @@
             <div class="settings-card">
                 <h3>⏰ Scheduled Scanning</h3>
                 <p class="card-desc">Automatically scan all container images on a schedule.</p>
-                
+
                 <div class="form-row">
                     <div class="form-group">
                         <label class="toggle-label">
@@ -265,7 +265,7 @@
             <div class="settings-card">
                 <h3>⚠️ Alert Thresholds</h3>
                 <p class="card-desc">Send alerts when containers exceed these resource limits.</p>
-                
+
                 <div class="form-row threshold-row">
                     <div class="form-group">
                         <label for="cpuThreshold">CPU Alert Threshold</label>
@@ -362,7 +362,7 @@
                         <span class="user-meta">Account created {{ current_user.created_at.strftime('%B %d, %Y') if current_user.created_at else 'N/A' }}</span>
                     </div>
                 </div>
-                
+
                 <a href="{{ url_for('auth.change_password') }}" class="btn btn-secondary">
                     🔐 Change Password
                 </a>
@@ -379,12 +379,12 @@
             </div>
             <div class="modal-body">
                 <input type="hidden" id="webhookId">
-                
+
                 <div class="form-group">
                     <label for="webhookName">Name</label>
                     <input type="text" id="webhookName" placeholder="e.g., Production Alerts" required>
                 </div>
-                
+
                 <div class="form-row">
                     <div class="form-group">
                         <label for="webhookType">Platform</label>
@@ -396,13 +396,13 @@
                         </select>
                     </div>
                 </div>
-                
+
                 <div class="form-group">
                     <label for="webhookUrl">Webhook URL</label>
                     <input type="url" id="webhookUrl" placeholder="https://..." required>
                     <span class="form-hint">Discord: Settings → Integrations → Webhooks</span>
                 </div>
-                
+
                 <h4>Alert Triggers</h4>
                 <div class="checkbox-grid">
                     <label class="checkbox-card">
@@ -427,7 +427,7 @@
                         </span>
                     </label>
                 </div>
-                
+
                 <h4>Resource Alerts</h4>
                 <div class="form-row">
                     <div class="form-group">
@@ -445,7 +445,7 @@
                         </div>
                     </div>
                 </div>
-                
+
                 <div class="modal-actions">
                     <button class="btn btn-secondary" onclick="testWebhook()">🧪 Test</button>
                     <button class="btn btn-primary" onclick="saveWebhook()">💾 Save Webhook</button>

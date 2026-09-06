@@ -11,14 +11,14 @@ function showToast(type, message, duration = 3000) {
         container.className = 'toast-container';
         document.body.appendChild(container);
     }
-    
+
     // Create toast element
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
     toast.textContent = message;
-    
+
     container.appendChild(toast);
-    
+
     // Auto-remove after duration
     setTimeout(() => {
         toast.style.opacity = '0';
@@ -46,7 +46,7 @@ document.addEventListener('keydown', (e) => {
         document.activeElement.tagName === 'SELECT') {
         return;
     }
-    
+
     // Press 'R' to refresh on dashboard
     if (e.key === 'r' && !e.ctrlKey && !e.metaKey) {
         if (window.location.pathname === '/dashboard') {
@@ -54,7 +54,7 @@ document.addEventListener('keydown', (e) => {
             location.reload();
         }
     }
-    
+
     // Press '/' to focus search (on dashboard)
     if (e.key === '/' && !e.ctrlKey && !e.metaKey) {
         const searchInput = document.getElementById('searchInput');
@@ -63,7 +63,7 @@ document.addEventListener('keydown', (e) => {
             searchInput.focus();
         }
     }
-    
+
     // Press 'Escape' to close modals
     if (e.key === 'Escape') {
         const modals = document.querySelectorAll('.modal-overlay[style*="flex"], .modal-overlay[style*="block"]');
@@ -75,7 +75,7 @@ document.addEventListener('keydown', (e) => {
             document.activeElement.blur();
         }
     }
-    
+
     // Press '?' to show keyboard shortcuts help (future enhancement)
     if (e.key === '?' && e.shiftKey) {
         showToast('info', 'Shortcuts: R=Refresh, /=Search, Esc=Close', 5000);
@@ -112,7 +112,7 @@ document.querySelectorAll('form').forEach(form => {
         if (submitBtn) {
             submitBtn.disabled = true;
             submitBtn.innerHTML = '<span class="loading">⏳</span> Processing...';
-            
+
             // Re-enable after 5 seconds in case of error
             setTimeout(() => {
                 submitBtn.disabled = false;

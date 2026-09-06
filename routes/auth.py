@@ -14,13 +14,13 @@ auth_bp = Blueprint('auth', __name__)
 def login():
     if current_user.is_authenticated:
         return redirect(url_for('dashboard.dashboard'))
-    
+
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
-        
+
         user = User.query.filter_by(username=username).first()
-        
+
         if user and user.check_password(password):
             login_user(user)
             next_page = request.args.get('next')
@@ -28,7 +28,7 @@ def login():
             return redirect(next_page or url_for('dashboard.dashboard'))
         else:
             flash('Invalid username or password', 'error')
-    
+
     return render_template('login.html')
 
 
@@ -47,7 +47,7 @@ def change_password():
         current_password = request.form.get('current_password')
         new_password = request.form.get('new_password')
         confirm_password = request.form.get('confirm_password')
-        
+
         if not current_user.check_password(current_password):
             flash('Current password is incorrect', 'error')
         elif new_password != confirm_password:
@@ -59,7 +59,7 @@ def change_password():
             db.session.commit()
             flash('Password changed successfully!', 'success')
             return redirect(url_for('dashboard.dashboard'))
-    
+
     return render_template('change_password.html')
 
 

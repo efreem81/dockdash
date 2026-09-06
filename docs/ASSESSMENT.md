@@ -1,7 +1,7 @@
 # DockDash - Comprehensive Assessment Report
 
-**Date:** February 1, 2026  
-**Version:** 1.0.0  
+**Date:** February 1, 2026
+**Version:** 1.0.0
 **Assessment Type:** Full Feature & Security Audit
 
 ---
@@ -59,8 +59,8 @@ DockDash is a well-designed container management dashboard with a beautiful naut
 ### 🔴 SECURITY VULNERABILITIES
 
 #### 1. CSRF Protection
-**Severity:** HIGH (when missing)  
-**Status:** ✅ Implemented  
+**Severity:** HIGH (when missing)
+**Status:** ✅ Implemented
 **Notes:** DockDash now enables CSRF protection via Flask-WTF (`CSRFProtect`). State-changing requests require a valid CSRF token.
 
 ```python
@@ -69,7 +69,7 @@ csrf = CSRFProtect(app)
 ```
 
 #### 2. No Rate Limiting
-**Severity:** HIGH  
+**Severity:** HIGH
 **Impact:** Login endpoint can be brute-forced, API endpoints can be abused
 
 **Fix Required:**
@@ -85,8 +85,8 @@ def login():
 ```
 
 #### 3. Secret Key Handling
-**Severity:** HIGH (when weak)  
-**Status:** 🟡 Improved  
+**Severity:** HIGH (when weak)
+**Status:** 🟡 Improved
 **Notes:** DockDash no longer falls back to a known constant. If `SECRET_KEY` is missing, it generates a random key at startup (sessions reset on restart). For stable sessions, set `SECRET_KEY` explicitly.
 
 ```python
@@ -97,8 +97,8 @@ app.config['SECRET_KEY'] = _secret_key
 ```
 
 #### 4. Session Timeout
-**Severity:** MEDIUM (when missing)  
-**Status:** ✅ Implemented  
+**Severity:** MEDIUM (when missing)
+**Status:** ✅ Implemented
 **Notes:** Session lifetime is configured via `SESSION_LIFETIME_HOURS` (default 12h). Cookie flags are set to LAN-friendly defaults; enable secure cookies when running behind HTTPS.
 
 ```python
@@ -108,13 +108,13 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 ```
 
 #### 5. SQLite in Production
-**Severity:** MEDIUM  
+**Severity:** MEDIUM
 **Impact:** Not suitable for concurrent users, no connection pooling
 
 **Recommendation:** Switch to PostgreSQL for production deployments
 
 #### 6. No HTTPS Enforcement
-**Severity:** HIGH  
+**Severity:** HIGH
 **Impact:** Credentials transmitted in plaintext over HTTP
 
 **Fix Required:**
@@ -124,7 +124,7 @@ Talisman(app, force_https=True)
 ```
 
 #### 7. No Audit Logging
-**Severity:** MEDIUM  
+**Severity:** MEDIUM
 **Impact:** No accountability, can't track who did what
 
 **Fix Required:**
@@ -139,7 +139,7 @@ class AuditLog(db.Model):
 ```
 
 #### 8. Single User System
-**Severity:** LOW  
+**Severity:** LOW
 **Impact:** All users share one admin account, no role-based access control
 
 ---
@@ -170,11 +170,11 @@ def container_logs(container_id):
 def container_stats(container_id):
     container = docker_client.containers.get(container_id)
     stats = container.stats(stream=False)
-    
+
     # Parse and format stats
     cpu_percent = calculate_cpu_percent(stats)
     memory_usage = stats['memory_stats']['usage'] / (1024**2)  # MB
-    
+
     return jsonify({
         'cpu_percent': cpu_percent,
         'memory_mb': memory_usage,
@@ -350,7 +350,7 @@ def health():
    - Add startup validation for required env vars
    - Document security best practices
 
-**Estimated Effort:** 2-3 days  
+**Estimated Effort:** 2-3 days
 **Impact:** Prevents common web vulnerabilities
 
 ---
@@ -390,7 +390,7 @@ def health():
    - Basic roles: Admin, Editor, Viewer
    - Per-user URL bookmarks
 
-**Estimated Effort:** 1-2 weeks  
+**Estimated Effort:** 1-2 weeks
 **Impact:** Major usability improvements
 
 ---
@@ -433,7 +433,7 @@ def health():
    - Container export (as images)
    - Volume backup
 
-**Estimated Effort:** 3-4 weeks  
+**Estimated Effort:** 3-4 weeks
 **Impact:** Feature parity with Portainer/Yacht
 
 ---
@@ -470,7 +470,7 @@ def health():
    - Security testing
    - Load testing
 
-**Estimated Effort:** 1-2 weeks  
+**Estimated Effort:** 1-2 weeks
 **Impact:** Professional polish
 
 ---
@@ -694,21 +694,21 @@ def url_list():
 DockDash has a solid foundation with excellent UI/UX design. The codebase is clean and maintainable. However, critical security issues must be addressed before any production deployment.
 
 ### Strengths
-✅ Beautiful, modern interface  
-✅ Clean code architecture  
-✅ Good documentation  
-✅ Docker/Podman compatibility  
+✅ Beautiful, modern interface
+✅ Clean code architecture
+✅ Good documentation
+✅ Docker/Podman compatibility
 
 ### Weaknesses
-❌ Security vulnerabilities  
-❌ Limited feature set  
-❌ No multi-user support  
-❌ Missing container management features  
+❌ Security vulnerabilities
+❌ Limited feature set
+❌ No multi-user support
+❌ Missing container management features
 
 ### Recommendation
 
-**For Personal Use:** Ready now (with security fixes)  
-**For Team Use:** Needs Phase 1 + 2 (3-4 weeks)  
+**For Personal Use:** Ready now (with security fixes)
+**For Team Use:** Needs Phase 1 + 2 (3-4 weeks)
 **For Production:** Needs all phases (8-12 weeks)
 
 ### Next Steps
@@ -739,6 +739,6 @@ DockDash has a solid foundation with excellent UI/UX design. The codebase is cle
 
 ---
 
-**Document Version:** 1.0  
-**Last Updated:** February 1, 2026  
+**Document Version:** 1.0
+**Last Updated:** February 1, 2026
 **Next Review:** March 1, 2026

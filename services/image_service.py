@@ -140,21 +140,21 @@ def prune_all():
         'volumes': {},
         'total_space_reclaimed': 0
     }
-    
+
     from services.docker_service import prune_containers
     results['containers'] = prune_containers()
     results['images'] = prune_images(dangling_only=False)
     results['volumes'] = prune_volumes()
-    
+
     total = 0
     for key in ['containers', 'images', 'volumes']:
         if isinstance(results[key], dict):
             total += results[key].get('space_reclaimed', 0)
-    
+
     results['total_space_reclaimed'] = total
     results['total_space_reclaimed_human'] = _format_bytes(total)
     results['success'] = True
-    
+
     return results
 
 
@@ -167,19 +167,19 @@ def parse_image_reference(image_ref):
         'tag': 'latest',
         'original': image_ref
     }
-    
+
     if not image_ref or image_ref == 'unknown':
         return result
-    
+
     if '@sha256:' in image_ref:
         image_ref, digest = image_ref.split('@', 1)
         result['digest'] = digest
         result['tag'] = None
     elif ':' in image_ref.split('/')[-1]:
         image_ref, result['tag'] = image_ref.rsplit(':', 1)
-    
+
     parts = image_ref.split('/')
-    
+
     if len(parts) == 1:
         result['repo'] = parts[0]
     elif len(parts) == 2:
@@ -193,7 +193,7 @@ def parse_image_reference(image_ref):
         result['registry'] = parts[0]
         result['namespace'] = parts[1]
         result['repo'] = '/'.join(parts[2:])
-    
+
     return result
 
 
@@ -220,10 +220,10 @@ def get_remote_image_digest(parsed):
     namespace = parsed['namespace']
     repo = parsed['repo']
     tag = parsed.get('tag') or 'latest'
-    
+
     if not repo:
         return None
-    
+
     try:
         if registry in ('docker.io', 'registry.hub.docker.com', 'index.docker.io'):
             token_url = f"https://auth.docker.io/token?service=registry.docker.io&scope=repository:{namespace}/{repo}:pull"
@@ -231,7 +231,7 @@ def get_remote_image_digest(parsed):
             if token_resp.status_code != 200:
                 return None
             token = token_resp.json().get('token')
-            
+
             manifest_url = f"https://registry-1.docker.io/v2/{namespace}/{repo}/manifests/{tag}"
             headers = {
                 'Authorization': f'Bearer {token}',
@@ -240,7 +240,7 @@ def get_remote_image_digest(parsed):
             resp = requests.head(manifest_url, headers=headers, timeout=5)
             if resp.status_code == 200:
                 return resp.headers.get('Docker-Content-Digest')
-        
+
         elif registry == 'ghcr.io':
             manifest_url = f"https://ghcr.io/v2/{namespace}/{repo}/manifests/{tag}"
             headers = {'Accept': 'application/vnd.docker.distribution.manifest.v2+json'}
@@ -249,7 +249,7 @@ def get_remote_image_digest(parsed):
                 return resp.headers.get('Docker-Content-Digest')
     except Exception as e:
         print(f"Error checking remote digest for {parsed['original']}: {e}")
-    
+
     return None
 
 
@@ -262,36 +262,36 @@ def check_image_update(image_ref):
         'remote_digest': None,
         'error': None
     }
-    
+
     if not image_ref or image_ref == 'unknown':
         result['error'] = 'Invalid image reference'
         return result
-    
+
     parsed = parse_image_reference(image_ref)
-    
+
     if parsed.get('digest'):
         result['error'] = 'Image specified by digest (immutable)'
         return result
-    
+
     cache_key = f"update:{image_ref}"
     cached = _cache_get(cache_key, ttl_seconds=300)
     if cached:
         return cached
-    
+
     local_digest = get_local_image_digest(image_ref)
     result['local_digest'] = local_digest
-    
+
     if not local_digest:
         result['error'] = 'Could not get local image digest'
         return result
-    
+
     remote_digest = get_remote_image_digest(parsed)
     result['remote_digest'] = remote_digest
-    
+
     if not remote_digest:
         result['error'] = 'Could not fetch remote digest'
         return result
-    
+
     result['has_update'] = (local_digest != remote_digest)
     _cache_set(cache_key, result)
     return result

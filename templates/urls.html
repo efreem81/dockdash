@@ -19,7 +19,7 @@
             All
         </a>
         {% for category in categories %}
-        <a href="{{ url_for('urls.url_list', category=category) }}" 
+        <a href="{{ url_for('urls.url_list', category=category) }}"
            class="category-tag {% if current_category == category %}active{% endif %}">
             {{ category }}
         </a>
@@ -35,20 +35,20 @@
                     <h3 class="url-title">{{ url.title }}</h3>
                     <span class="url-category">{{ url.category }}</span>
                 </div>
-                
+
                 <a href="{{ url.url }}" target="_blank" class="url-link">
                     {{ url.url }}
                 </a>
-                
+
                 {% if url.description %}
                 <p class="url-description">{{ url.description }}</p>
                 {% endif %}
-                
+
                 <div class="url-meta">
                     <span class="url-author">Added by {{ url.user.username }}</span>
                     <span class="url-date">{{ url.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
                 </div>
-                
+
                 <div class="url-actions">
                     <a href="{{ url.url }}" target="_blank" class="btn btn-primary btn-sm">
                         🔗 Open
