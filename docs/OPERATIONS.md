@@ -125,7 +125,9 @@ Expected: `readonly=true`, `caps=["ALL"]`, and
 ## Register and discover
 
 In **Fleet**, add an agent endpoint whose HTTPS hostname/IP exactly matches the
-certificate SAN. Test it before continuing. Then select the endpoint and use
+certificate SAN. Fleet automatically retests enabled endpoints and must show a
+powered-off or unreachable host as **Offline**, never as a stale online hint.
+Test it before continuing. Then select the endpoint and use
 **Projects → Discover / adopt**.
 
 The CLI offers the same administrative path:
@@ -138,6 +140,18 @@ docker compose exec dockdash python dockdash_cli.py project-sync --endpoint HOST
 
 Review discoveries before running actions. A discovered directory is not proof
 that its data mounts, dependencies, or application endpoint are healthy.
+
+After an agent upgrade, select that host in the dashboard and verify both
+**Updates** and **Security**. Update checks must return per-image results rather
+than redirecting the operator to Projects. Security must report the agent's
+Trivy scanner and complete a representative local-image scan. Use Projects for
+the actual pull/deploy operation so the owning Compose definition and health
+checks remain authoritative.
+
+Use **All Hosts** for consolidated inventory. It is intentionally read-only:
+open the owning host from a card or row before running lifecycle actions. An
+offline host should appear in the unavailable-host warning while inventory from
+reachable hosts remains visible.
 
 ## Configure project safety checks
 

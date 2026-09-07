@@ -174,7 +174,7 @@ def _wait_for_running(container, timeout_seconds: float = 6.0) -> bool:
         return False
 
 
-def recreate_container(container_id, pull_latest=True, skip_scan=False):
+def recreate_container(container_id, pull_latest=True, skip_scan=False, endpoint_id=None):
     """
     Recreate a container with the same configuration but optionally updated image.
 
@@ -358,14 +358,14 @@ def recreate_container(container_id, pull_latest=True, skip_scan=False):
                 start_time = time.time()
                 scan_result = scan_image(image_ref, 'CRITICAL,HIGH,MEDIUM,LOW')
                 duration = time.time() - start_time
-                save_scan_result(image_ref, scan_result, duration)
+                save_scan_result(image_ref, scan_result, duration, endpoint_id=endpoint_id)
             except Exception as e:
                 logger.warning('Could not scan image %s: %s', image_ref, e)
 
         # Clear the update status since we just pulled/recreated with latest image
         try:
             from services.update_service import clear_update_status
-            clear_update_status(image_ref)
+            clear_update_status(image_ref, endpoint_id=endpoint_id)
         except Exception as e:
             logger.warning('Could not clear update status for %s: %s', image_ref, e)
 

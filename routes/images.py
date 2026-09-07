@@ -8,7 +8,10 @@ from flask_login import login_required
 from services.image_service import (
     get_image_details, check_image_update
 )
-from services.fleet_service import get_endpoint, list_images as fleet_list_images, image_action
+from services.fleet_service import (
+    get_endpoint, list_images as fleet_list_images, image_action,
+    check_endpoint_updates,
+)
 
 images_bp = Blueprint('images', __name__)
 
@@ -111,18 +114,31 @@ def api_prune_all():
         return jsonify({'success': False, 'error': str(exc)}), 403
 
 
-@images_bp.route('/image/check-update')
+@images_bp.route('/image/check-update', methods=['GET', 'POST'])
 @login_required
 def api_check_image_update():
     """Check if an image has an update available."""
-    image = (request.args.get('image') or '').strip()
+    data = request.get_json(silent=True) or {}
+    image = (request.args.get('image') or data.get('image') or '').strip()
 
     if not image:
         return jsonify({'success': False, 'error': 'Image parameter required'}), 400
 
-    if get_endpoint().kind != 'local':
-        return jsonify({'success': False, 'error': 'Remote update checks are performed through Compose project pull-and-deploy jobs'}), 409
-    result = check_image_update(image)
+    endpoint = get_endpoint()
+    if endpoint.kind == 'agent':
+        try:
+            payload = check_endpoint_updates(endpoint, [image])
+            result = payload.get('results', {}).get(image)
+            if not result:
+                raise RuntimeError('Agent returned no update result for the requested image')
+            from services.update_service import save_update_result
+            save_update_result(image, result, endpoint_id=endpoint.id)
+        except Exception as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 502
+    else:
+        result = check_image_update(image)
+        from services.update_service import save_update_result
+        save_update_result(image, result, endpoint_id=endpoint.id)
     result['success'] = result['error'] is None or result['has_update'] is not None
     return jsonify(result)
 
@@ -131,9 +147,8 @@ def api_check_image_update():
 @login_required
 def api_check_images_updates():
     """Check multiple images for updates and persist results."""
-    if get_endpoint().kind != 'local':
-        return jsonify({'success': False, 'error': 'Remote update checks are performed through Compose projects'}), 409
-    from services.update_service import check_and_save_update
+    endpoint = get_endpoint()
+    from services.update_service import check_and_save_update, save_update_result
 
     data = request.get_json() or {}
     images = data.get('images', [])
@@ -144,8 +159,20 @@ def api_check_images_updates():
     if len(images) > 50:
         return jsonify({'success': False, 'error': 'Maximum 50 images per request'}), 400
 
-    unique_images = list(set(images))
-    results = {img: check_and_save_update(img) for img in unique_images}
+    unique_images = list(dict.fromkeys(images))
+    if endpoint.kind == 'agent':
+        try:
+            payload = check_endpoint_updates(endpoint, unique_images)
+            results = payload.get('results', {})
+            for image_ref, result in results.items():
+                save_update_result(image_ref, result, endpoint_id=endpoint.id)
+        except Exception as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 502
+    else:
+        results = {
+            image_ref: check_and_save_update(image_ref, endpoint_id=endpoint.id)
+            for image_ref in unique_images
+        }
 
     return jsonify({'success': True, 'results': results})
 
@@ -156,7 +183,8 @@ def api_get_stored_updates():
     """Get all stored update check results."""
     from services.update_service import get_stored_updates, get_update_settings
 
-    updates = get_stored_updates()
+    endpoint = get_endpoint()
+    updates = get_stored_updates(endpoint_id=endpoint.id)
     settings = get_update_settings()
 
     return jsonify({
@@ -170,11 +198,18 @@ def api_get_stored_updates():
 @login_required
 def api_check_all_updates():
     """Check all container images for updates."""
-    if get_endpoint().kind != 'local':
-        return jsonify({'success': False, 'error': 'Remote update checks are performed through Compose projects'}), 409
-    from services.update_service import check_all_container_images
+    endpoint = get_endpoint()
+    from services.update_service import check_all_container_images, save_update_result
 
-    result = check_all_container_images()
+    if endpoint.kind == 'agent':
+        try:
+            result = check_endpoint_updates(endpoint)
+            for image_ref, update_result in result.get('results', {}).items():
+                save_update_result(image_ref, update_result, endpoint_id=endpoint.id)
+        except Exception as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 502
+    else:
+        result = check_all_container_images(endpoint_id=endpoint.id)
     return jsonify(result)
 
 
@@ -202,5 +237,6 @@ def api_clear_updates():
     data = request.get_json() or {}
     image_ref = data.get('image')
 
-    clear_update_status(image_ref)
+    endpoint = get_endpoint()
+    clear_update_status(image_ref, endpoint_id=endpoint.id)
     return jsonify({'success': True, 'message': 'Update status cleared'})

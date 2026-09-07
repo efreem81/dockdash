@@ -81,15 +81,25 @@ def update_update_settings(data: Dict[str, Any]) -> Dict[str, Any]:
 # Update Status Storage
 # =============================================================================
 
-def save_update_result(image_ref: str, result: Dict[str, Any]):
+def _stored_image_ref(image_ref, endpoint_id=None):
+    return f'endpoint:{int(endpoint_id)}:{image_ref}' if endpoint_id is not None else image_ref
+
+
+def _visible_image_ref(image_ref, endpoint_id=None):
+    prefix = f'endpoint:{int(endpoint_id)}:' if endpoint_id is not None else ''
+    return image_ref[len(prefix):] if prefix and image_ref.startswith(prefix) else image_ref
+
+
+def save_update_result(image_ref: str, result: Dict[str, Any], endpoint_id=None):
     """Save an update check result to the database."""
     from config import db
     from models import ImageUpdate
 
     try:
-        update = ImageUpdate.query.filter_by(image_ref=image_ref).first()
+        stored_ref = _stored_image_ref(image_ref, endpoint_id)
+        update = ImageUpdate.query.filter_by(image_ref=stored_ref).first()
         if not update:
-            update = ImageUpdate(image_ref=image_ref)
+            update = ImageUpdate(image_ref=stored_ref)
             db.session.add(update)
 
         update.has_update = result.get('has_update', False) or False
@@ -105,29 +115,45 @@ def save_update_result(image_ref: str, result: Dict[str, Any]):
         return False
 
 
-def get_stored_updates() -> Dict[str, Dict]:
+def get_stored_updates(endpoint_id=None) -> Dict[str, Dict]:
     """Get all stored update check results."""
     from models import ImageUpdate
 
     try:
-        updates = ImageUpdate.query.all()
-        return {u.image_ref: u.to_dict() for u in updates}
+        if endpoint_id is None:
+            updates = ImageUpdate.query.filter(~ImageUpdate.image_ref.like('endpoint:%')).all()
+        else:
+            prefix = f'endpoint:{int(endpoint_id)}:'
+            updates = ImageUpdate.query.filter(ImageUpdate.image_ref.like(f'{prefix}%')).all()
+        results = {}
+        for update in updates:
+            visible_ref = _visible_image_ref(update.image_ref, endpoint_id)
+            value = update.to_dict()
+            value['image'] = visible_ref
+            results[visible_ref] = value
+        return results
     except Exception:
         return {}
 
 
-def get_image_update_status(image_ref: str) -> Optional[Dict]:
+def get_image_update_status(image_ref: str, endpoint_id=None) -> Optional[Dict]:
     """Get stored update status for a specific image."""
     from models import ImageUpdate
 
     try:
-        update = ImageUpdate.query.filter_by(image_ref=image_ref).first()
-        return update.to_dict() if update else None
+        update = ImageUpdate.query.filter_by(
+            image_ref=_stored_image_ref(image_ref, endpoint_id)
+        ).first()
+        if not update:
+            return None
+        result = update.to_dict()
+        result['image'] = image_ref
+        return result
     except Exception:
         return None
 
 
-def clear_update_status(image_ref: str = None):
+def clear_update_status(image_ref: str = None, endpoint_id=None):
     """Clear stored update status for an image or all images.
 
     When clearing a specific image, we set has_update=False rather than deleting,
@@ -140,13 +166,23 @@ def clear_update_status(image_ref: str = None):
     try:
         if image_ref:
             # For a specific image, just mark it as no longer having an update
-            update = ImageUpdate.query.filter_by(image_ref=image_ref).first()
+            update = ImageUpdate.query.filter_by(
+                image_ref=_stored_image_ref(image_ref, endpoint_id)
+            ).first()
             if update:
                 update.has_update = False
                 update.checked_at = datetime.utcnow()
                 db.session.commit()
         else:
-            ImageUpdate.query.delete()
+            if endpoint_id is None:
+                ImageUpdate.query.filter(~ImageUpdate.image_ref.like('endpoint:%')).delete(
+                    synchronize_session=False
+                )
+            else:
+                prefix = f'endpoint:{int(endpoint_id)}:'
+                ImageUpdate.query.filter(ImageUpdate.image_ref.like(f'{prefix}%')).delete(
+                    synchronize_session=False
+                )
             db.session.commit()
         return True
     except Exception as e:
@@ -158,14 +194,14 @@ def clear_update_status(image_ref: str = None):
 # Update Checking
 # =============================================================================
 
-def check_and_save_update(image_ref: str) -> Dict[str, Any]:
+def check_and_save_update(image_ref: str, endpoint_id=None) -> Dict[str, Any]:
     """Check for updates on an image and save the result."""
     result = check_image_update(image_ref)
-    save_update_result(image_ref, result)
+    save_update_result(image_ref, result, endpoint_id=endpoint_id)
     return result
 
 
-def check_all_container_images() -> Dict[str, Any]:
+def check_all_container_images(endpoint_id=None) -> Dict[str, Any]:
     """Check all container images for updates and store results."""
     from config import db
     from models import UpdateSettings
@@ -193,7 +229,7 @@ def check_all_container_images() -> Dict[str, Any]:
     for i, image in enumerate(images):
         _log(logging.DEBUG, f"Checking [{i+1}/{len(images)}]: {image}")
         try:
-            result = check_and_save_update(image)
+            result = check_and_save_update(image, endpoint_id=endpoint_id)
             results[image] = result
             if result.get('has_update'):
                 updates_found += 1

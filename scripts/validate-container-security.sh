@@ -21,7 +21,7 @@ docker build --tag "$agent_image" "$repository_dir/agent"
 
 docker run --rm \
   --read-only \
-  --tmpfs /tmp:rw,noexec,nosuid,size=2g \
+  --tmpfs /tmp:rw,noexec,nosuid,size=4g \
   --volume /var/run/docker.sock:/var/run/docker.sock:ro \
   --env CONTROLLER_IMAGE="$controller_image" \
   --env AGENT_IMAGE="$agent_image" \
@@ -48,7 +48,7 @@ docker run --detach --rm \
   --read-only \
   --cap-drop ALL \
   --security-opt no-new-privileges:true \
-  --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+  --tmpfs /tmp:rw,noexec,nosuid,size=2g \
   --tmpfs /root/.docker:rw,noexec,nosuid,size=16m \
   --publish "127.0.0.1:${agent_port}:9002" \
   --volume /var/run/docker.sock:/var/run/docker.sock:rw \
@@ -72,6 +72,16 @@ if [[ "$authenticated" != true ]]; then
   docker logs "$agent_container" >&2
   exit 1
 fi
+
+scanner_status="$(curl --silent --show-error --fail \
+  --cacert "$certificate_dir/ca.crt" \
+  --cert "$certificate_dir/controller.crt" \
+  --key "$certificate_dir/controller.key" \
+  "https://localhost:${agent_port}/v1/security/status")"
+python3 -c 'import json, sys
+payload = json.loads(sys.argv[1])
+if not payload.get("success") or not payload.get("available") or payload.get("scanner") != "trivy":
+    raise SystemExit(f"Agent scanner status is not ready: {payload}")' "$scanner_status"
 
 if curl --silent --show-error --fail \
     --cacert "$certificate_dir/ca.crt" \

@@ -178,12 +178,16 @@ def api_recreate_container(container_id):
     endpoint = get_endpoint()
     if endpoint.kind != 'local':
         return jsonify({'success': False, 'error': 'Use the Compose Projects page to recreate remote workloads from their owning definition'}), 409
-    result = recreate_container(container_id, pull_latest=pull_latest)
+    result = recreate_container(
+        container_id,
+        pull_latest=pull_latest,
+        endpoint_id=endpoint.id,
+    )
 
     # Clear update status for this image since we just updated
     if result.get('success') and result.get('image'):
         from services.update_service import clear_update_status
-        clear_update_status(result['image'])
+        clear_update_status(result['image'], endpoint_id=endpoint.id)
 
     status = 200 if result['success'] else 500
     return jsonify(result), status
@@ -204,7 +208,7 @@ def api_update_all_containers():
 
     # Get containers and their update status
     containers = get_all_containers(show_all=True)
-    stored_updates = get_stored_updates()
+    stored_updates = get_stored_updates(endpoint_id=endpoint.id)
 
     results = []
     success_count = 0
@@ -227,10 +231,15 @@ def api_update_all_containers():
 
         # Try to recreate (skip_scan=True to avoid Trivy cache lock conflicts)
         try:
-            result = recreate_container(container_id, pull_latest=True, skip_scan=True)
+            result = recreate_container(
+                container_id,
+                pull_latest=True,
+                skip_scan=True,
+                endpoint_id=endpoint.id,
+            )
             if result.get('success'):
                 success_count += 1
-                clear_update_status(image)
+                clear_update_status(image, endpoint_id=endpoint.id)
                 if image not in updated_images:
                     updated_images.append(image)
                 results.append({
@@ -259,18 +268,29 @@ def api_update_all_containers():
     # Run vulnerability scans sequentially for updated images (avoids Trivy lock conflicts)
     if updated_images:
         import threading
+        application = current_app._get_current_object()
+        endpoint_id = endpoint.id
+
         def scan_updated_images():
             from services.vulnerability_service import scan_image, save_scan_result, clear_image_cache
             import time
-            for image_ref in updated_images:
-                try:
-                    clear_image_cache(image_ref)
-                    start_time = time.time()
-                    scan_result = scan_image(image_ref, 'CRITICAL,HIGH,MEDIUM,LOW')
-                    duration = time.time() - start_time
-                    save_scan_result(image_ref, scan_result, duration)
-                except Exception as e:
-                    print(f"Warning: Could not scan image {image_ref}: {e}")
+            with application.app_context():
+                for image_ref in updated_images:
+                    try:
+                        clear_image_cache(image_ref)
+                        start_time = time.time()
+                        scan_result = scan_image(image_ref, 'CRITICAL,HIGH,MEDIUM,LOW')
+                        duration = time.time() - start_time
+                        save_scan_result(
+                            image_ref,
+                            scan_result,
+                            duration,
+                            endpoint_id=endpoint_id,
+                        )
+                    except Exception as e:
+                        application.logger.warning(
+                            'Could not scan updated image %s: %s', image_ref, e
+                        )
         # Run scans in background thread so response isn't delayed
         threading.Thread(target=scan_updated_images, daemon=True).start()
 

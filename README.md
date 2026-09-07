@@ -11,10 +11,12 @@ management are not current goals.
 ## What it manages
 
 - Multiple standalone Docker hosts through certificate-authenticated agents.
+- A consolidated, read-only all-host container view plus live endpoint health;
+  unreachable or powered-off hosts are reported without hiding reachable inventory.
 - Container inventory, details, stats, logs, start, stop, restart, removal, and
   local-only exec.
-- Image inventory, pull, deletion, update checks, dangling-image and unused-volume
-  cleanup, and Trivy scanning.
+- Image inventory, pull, deletion, per-host registry update checks,
+  dangling-image and unused-volume cleanup, and per-host Trivy scanning.
 - Existing Compose projects discovered from Docker labels and allowlisted host
   directories, then adopted without rewriting them.
 - Compose validate, start, stop, restart, pull, up, recreate, logs, scale, and
@@ -244,6 +246,16 @@ Agent variables:
 | `DOCKDASH_MANAGED_ROOT` | `/opt/dockdash-managed` | Writable managed/Git project root |
 | `DOCKDASH_AGENT_MIN_FREE_BYTES` | `1073741824` | Minimum free bytes for preflight |
 | `DOCKDASH_AGENT_MAX_OUTPUT` | `50000` | Maximum returned command-output characters |
+| `DOCKDASH_AGENT_MAX_SCAN_RESULT_BYTES` | `33554432` | Maximum accepted Trivy JSON result size per image |
+| `DOCKDASH_AGENT_MAX_SCAN_FINDINGS` | `5000` | Maximum detailed findings returned per image; summary counts remain complete |
+| `DOCKDASH_AGENT_UPDATE_REGISTRIES` | public registry allowlist | Registries an agent may contact for update checks |
+| `DOCKDASH_AGENT_UPDATE_AUTH_HOSTS` | public auth-host allowlist | HTTPS bearer-token hosts accepted from registry challenges |
+
+The agent resolves vulnerability targets through its local Docker daemon and
+passes the immutable local image ID to Trivy. Update checks permit outbound
+requests only to the configured registry and token-host allowlists. Private
+registries must be explicitly added and must provide an authentication method
+available to the agent; credentials are not accepted in image references.
 
 ## Administrative CLI
 

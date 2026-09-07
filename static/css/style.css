@@ -789,6 +789,23 @@ a:hover {
     color: #92400E;
 }
 
+.status-badge.status-online {
+    background: linear-gradient(135deg, #D1FAE5 0%, #A7F3D0 100%);
+    color: #065F46;
+}
+
+.status-badge.status-offline {
+    background: linear-gradient(135deg, #FEE2E2 0%, #FECACA 100%);
+    color: #991B1B;
+}
+
+.status-badge.status-checking,
+.status-badge.status-unknown,
+.status-badge.status-disabled {
+    background: linear-gradient(135deg, #E2E8F0 0%, #CBD5E1 100%);
+    color: #475569;
+}
+
 /* Container Details */
 .container-details {
     background: linear-gradient(135deg, #F8FAFC 0%, #F1F5F9 100%);
@@ -4430,6 +4447,17 @@ html {
     margin-bottom: 1.5rem;
 }
 .endpoint-card, .project-card { margin-bottom: 0; }
+.endpoint-name-badge {
+    display: inline-flex;
+    width: fit-content;
+    padding: .2rem .55rem;
+    border-radius: 999px;
+    background: #DBEAFE;
+    color: #1E40AF;
+    font-size: .7rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
 .project-settings { display: grid; gap: .65rem; margin: 1rem 0; }
 .project-settings label { display: grid; gap: .35rem; color: var(--text-secondary, #9fb4c9); }
 .project-settings input { width: 100%; }

@@ -11,13 +11,15 @@ services:
     security_opt:
       - no-new-privileges:true
     tmpfs:
-      - /tmp:rw,noexec,nosuid,size=64m
+      - /tmp:rw,noexec,nosuid,size=2g
       - /root/.docker:rw,noexec,nosuid,size=16m
     environment:
       DOCKDASH_COMPOSE_ROOTS: "/home/eric/docker-compose,/home/eric/Compose-Examples,/opt"
       DOCKDASH_SCAN_ROOTS: "/home/eric/docker-compose,/opt"
       DOCKDASH_MANAGED_ROOT: "/opt/dockdash-managed"
       DOCKDASH_AGENT_MIN_FREE_BYTES: "1073741824"
+      DOCKDASH_AGENT_UPDATE_REGISTRIES: "docker.io,ghcr.io,lscr.io,quay.io,gcr.io,registry.k8s.io,public.ecr.aws,mcr.microsoft.com"
+      DOCKDASH_AGENT_UPDATE_AUTH_HOSTS: "ghcr.io,quay.io,gcr.io,registry.k8s.io,auth.linuxserver.io,lscr.io,public.ecr.aws,mcr.microsoft.com"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:rw
       - /etc/dockdash-agent:/certs:ro

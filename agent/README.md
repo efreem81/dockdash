@@ -36,9 +36,21 @@ Configure `DOCKDASH_COMPOSE_ROOTS` as a comma-separated allowlist. Project paths
 
 The agent intentionally does not expose `docker compose down -v`, arbitrary shell execution, or a general host filesystem API.
 
+The image includes the same commit-pinned Trivy scanner as the controller.
+Vulnerability requests accept only bounded image references already present on
+the local Docker daemon, resolve them to immutable local image IDs, and keep the
+database and result files in the private ephemeral `/tmp` tmpfs. Detailed output
+and runtime are bounded. Registry update checks permit only the configured
+`DOCKDASH_AGENT_UPDATE_REGISTRIES` and HTTPS token hosts in
+`DOCKDASH_AGENT_UPDATE_AUTH_HOSTS`; this prevents the update API from becoming
+an arbitrary network probe.
+
 The supplied Compose definitions also use a read-only container root filesystem,
 drop every Linux capability, disable privilege escalation, and provide bounded
-temporary filesystems only for process and Docker CLI state.
+temporary filesystems only for process, Docker CLI state, and the Trivy database.
+The `/tmp` ceiling is 2 GiB because Trivy briefly holds its compressed download,
+expanded database, cache, and scan output together; tmpfs capacity is a maximum,
+not a preallocated reservation.
 
 Because the agent controls a Docker socket, compromise of the agent is
 root-equivalent on that Docker host. Bind remote TCP/9002 to the exact

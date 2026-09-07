@@ -8,6 +8,14 @@ RUN git clone https://github.com/docker/buildx.git . && \
     GOFLAGS=-mod=mod go mod tidy && \
     CGO_ENABLED=0 GOFLAGS=-mod=mod go build -trimpath -o /buildx ./cmd/buildx
 
+FROM golang:1.27.0-alpine@sha256:4c9fe60190a2a3350ddc51de80d0224b8a6698d12bdfc999fee45ea9d6c46dbc AS trivy-builder
+
+RUN apk add --no-cache git
+WORKDIR /trivy-source
+RUN git clone https://github.com/aquasecurity/trivy.git . && \
+    git checkout 89d3acfce93a34e2120dbff0f71c947aadce4c83 && \
+    CGO_ENABLED=0 go build -trimpath -o /trivy ./cmd/trivy
+
 FROM docker:29-cli@sha256:eccaacfeed644c7de222ff047483568cb988dde95476fbaaf10ea2d04921bb66
 
 RUN apk upgrade --no-cache && \
@@ -22,6 +30,7 @@ RUN /venv/bin/pip uninstall --yes pip setuptools wheel && \
     apk del py3-pip && \
     rm -f /usr/local/libexec/docker/cli-plugins/docker-buildx
 COPY --from=buildx-builder /buildx /usr/local/libexec/docker/cli-plugins/docker-buildx
+COPY --from=trivy-builder /trivy /usr/local/bin/trivy
 COPY app.py entrypoint.sh gunicorn_conf.py ./
 RUN chmod 0755 /agent/entrypoint.sh && mkdir -p /opt/dockdash-managed
 

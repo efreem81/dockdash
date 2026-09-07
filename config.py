@@ -246,6 +246,7 @@ def _run_migrations():
         ('image_vulnerability', 'vulnerabilities_json', 'TEXT'),
         ('scan_settings', 'log_level', "VARCHAR(20) DEFAULT 'WARNING'"),
         ('compose_project', 'healthcheck_statuses_json', "TEXT NOT NULL DEFAULT '[]'"),
+        ('endpoint', 'last_checked', 'DATETIME'),
     )
     inspector = inspect(db.engine)
     tables = set(inspector.get_table_names())

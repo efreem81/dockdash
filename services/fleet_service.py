@@ -55,12 +55,15 @@ def _agent(endpoint):
 
 
 def mark_success(endpoint):
-    endpoint.last_seen = datetime.utcnow()
+    now = datetime.utcnow()
+    endpoint.last_seen = now
+    endpoint.last_checked = now
     endpoint.last_error = None
     db.session.commit()
 
 
 def mark_failure(endpoint, error):
+    endpoint.last_checked = datetime.utcnow()
     endpoint.last_error = str(error)[:2000]
     db.session.commit()
 
@@ -114,7 +117,7 @@ def normalize_container(endpoint, container):
     return item
 
 
-def endpoint_health(endpoint):
+def endpoint_health(endpoint, timeout=None):
     try:
         if endpoint.kind == 'local':
             client = docker_service.get_docker_client()
@@ -132,7 +135,7 @@ def endpoint_health(endpoint):
                 },
             }
         else:
-            payload = _agent(endpoint).get('/v1/system')
+            payload = _agent(endpoint).get('/v1/system', timeout=timeout)
         mark_success(endpoint)
         return payload
     except Exception as exc:
@@ -140,13 +143,21 @@ def endpoint_health(endpoint):
         raise
 
 
-def list_containers(endpoint, show_all=False):
+def list_containers(endpoint, show_all=False, timeout=None):
     if endpoint.kind == 'local':
         containers = docker_service.get_all_containers(show_all=show_all)
     else:
-        payload = _agent(endpoint).get('/v1/containers', params={'all': '1' if show_all else '0'})
-        mark_success(endpoint)
-        containers = payload.get('containers', [])
+        try:
+            payload = _agent(endpoint).get(
+                '/v1/containers',
+                params={'all': '1' if show_all else '0'},
+                timeout=timeout,
+            )
+            mark_success(endpoint)
+            containers = payload.get('containers', [])
+        except Exception as exc:
+            mark_failure(endpoint, exc)
+            raise
     return [normalize_container(endpoint, container) for container in containers]
 
 
@@ -221,3 +232,36 @@ def image_action(endpoint, action, data=None, image_id=None):
     if action == 'prune-system':
         return image_service.prune_all()
     raise ValueError(f'Unsupported image action: {action}')
+
+
+def vulnerability_status(endpoint):
+    """Return scanner availability for the selected Docker endpoint."""
+    if endpoint.kind == 'agent':
+        return _agent(endpoint).get('/v1/security/status', timeout=30)
+    from services.vulnerability_service import is_trivy_available
+    return {
+        'success': True,
+        'scanner': 'trivy',
+        'available': is_trivy_available(),
+    }
+
+
+def scan_endpoint_images(endpoint, *, image=None, images=None, severity=None, scan_all=False):
+    """Run a vulnerability scan where the selected images actually reside."""
+    if endpoint.kind != 'agent':
+        raise ValueError('Local vulnerability scans are handled by the controller scanner')
+    path = '/v1/security/scan-all' if scan_all else '/v1/security/scan'
+    payload = {'severity': severity}
+    if image is not None:
+        payload['image'] = image
+    if images is not None:
+        payload['images'] = images
+    return _agent(endpoint).post(path, json=payload, timeout=1800)
+
+
+def check_endpoint_updates(endpoint, images=None):
+    """Check registry digests from the selected Docker endpoint."""
+    if endpoint.kind != 'agent':
+        raise ValueError('Local update checks are handled by the controller')
+    payload = {'images': images} if images is not None else {}
+    return _agent(endpoint).post('/v1/images/check-updates', json=payload, timeout=900)

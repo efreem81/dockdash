@@ -3,12 +3,13 @@
 {% block title %}Dashboard - DockDash{% endblock %}
 
 {% block content %}
-<div class="dashboard" data-show-all="{{ 'true' if show_all else 'false' }}" data-endpoint-id="{{ endpoint.id }}">
+<div class="dashboard" data-show-all="{{ 'true' if show_all else 'false' }}" data-endpoint-id="{{ endpoint.id if endpoint else 'all' }}" data-endpoint-kind="{{ endpoint.kind if endpoint else 'all' }}" data-all-hosts="{{ 'true' if all_hosts else 'false' }}">
     <div class="page-header">
         <h1>🐳 Docker Containers</h1>
         <div class="header-actions">
             <select id="dashboardEndpoint" onchange="location.href='/dashboard?endpoint_id='+this.value" title="Docker endpoint">
-                {% for item in endpoints %}<option value="{{ item.id }}" {% if item.id == endpoint.id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+                <option value="all" {% if all_hosts %}selected{% endif %}>All Hosts</option>
+                {% for item in endpoints %}<option value="{{ item.id }}" {% if endpoint and item.id == endpoint.id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
             </select>
             <div class="view-toggle">
                 <button class="view-btn active" id="cardViewBtn" onclick="setView('card')" title="Card View">
@@ -27,15 +28,23 @@
                     </svg>
                 </button>
             </div>
-            <button class="btn btn-secondary" onclick="checkAllImageUpdates()" id="checkUpdatesBtn" title="Check for image updates">
+            {% if not all_hosts %}
+            <button class="btn btn-secondary" onclick="checkAllImageUpdates()" id="checkUpdatesBtn" title="Check for image updates on {{ endpoint.name }}">
                 🔍 Updates
             </button>
+            {% if endpoint.kind == 'local' %}
             <button class="btn btn-success" onclick="updateAllContainers()" id="updateAllBtn" style="display: {{ 'inline-flex' if updates_count > 0 else 'none' }};" title="Update all containers with available updates">
                 ⬆️ Update All (<span id="updateAllCount">{{ updates_count }}</span>)
             </button>
+            {% else %}
+            <a class="btn btn-success" href="{{ url_for('projects.projects', endpoint_id=endpoint.id) }}" title="Deploy remote updates through the owning Compose projects">
+                ⬆️ Deploy via Projects{% if updates_count > 0 %} ({{ updates_count }}){% endif %}
+            </a>
+            {% endif %}
             <button class="btn btn-secondary" onclick="scanAllVulnerabilities()" id="scanVulnBtn" title="Scan all images for security vulnerabilities">
                 🛡️ Security
             </button>
+            {% endif %}
             <button class="btn btn-secondary btn-icon" onclick="refreshContainers()" title="Refresh">
                 🔄
             </button>
@@ -43,7 +52,7 @@
     </div>
 
     <!-- Bulk Actions Toolbar -->
-    <div class="bulk-actions-bar" id="bulkActionsBar" style="display: none;">
+    {% if not all_hosts %}<div class="bulk-actions-bar" id="bulkActionsBar" style="display: none;">
         <div class="bulk-select-info">
             <label class="bulk-select-all">
                 <input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()">
@@ -68,9 +77,14 @@
                 ✕ Clear
             </button>
         </div>
-    </div>
+    </div>{% endif %}
 
-    {% if not docker_available %}
+    {% if all_hosts and endpoint_errors %}
+    <div class="alert alert-warning">
+        <strong>⚠️ {{ endpoint_errors|length }} host{{ 's' if endpoint_errors|length != 1 else '' }} unavailable</strong>
+        <p>{% for failure in endpoint_errors %}{{ failure.name }}{% if not loop.last %}, {% endif %}{% endfor %}. Reachable hosts are still shown below.</p>
+    </div>
+    {% elif not docker_available %}
     <div class="alert alert-warning">
         <strong>⚠️ Docker Not Available</strong>
         <p>Unable to connect to Docker daemon. Make sure the Docker socket is mounted correctly.</p>
@@ -78,7 +92,11 @@
     {% endif %}
 
     <div class="info-bar">
+        {% if all_hosts %}
+        <span class="host-ip">🖥️ <strong>All Hosts</strong> · {{ available_endpoint_count }}/{{ endpoints|length }} reachable</span>
+        {% else %}
         <span class="host-ip">🖥️ <strong>{{ endpoint.name }}</strong> · {{ host_ip }}</span>
+        {% endif %}
         <span class="container-count">📦 Containers: <strong id="containerCount">{{ containers|length }}</strong></span>
         {% set vuln_container_count = containers|selectattr('vulnerabilities')|selectattr('vulnerabilities.total', 'gt', 0)|list|length %}
         <a href="#" class="info-stat info-stat-clickable" id="vulnCountLink" onclick="toggleVulnFilter(); return false;" style="display: {{ 'inline-flex' if vuln_container_count > 0 else 'none' }};" title="Click to filter containers with vulnerabilities">
@@ -195,19 +213,31 @@
              data-created="{{ container.created }}"
              data-compose-project="{{ container.compose_project or '' }}"
              data-id="{{ container.id }}"
+             data-endpoint-id="{{ container.endpoint_id }}"
+             data-endpoint-name="{{ container.endpoint_name }}"
+             data-key="{{ container.endpoint_id }}:{{ container.id }}"
              data-has-update="{{ 'true' if container.has_update else 'false' }}"
              data-vuln-critical="{{ container.vulnerabilities.critical if container.vulnerabilities else 0 }}"
              data-vuln-high="{{ container.vulnerabilities.high if container.vulnerabilities else 0 }}"
              data-vuln-medium="{{ container.vulnerabilities.medium if container.vulnerabilities else 0 }}"
              data-vuln-low="{{ container.vulnerabilities.low if container.vulnerabilities else 0 }}"
              data-vuln-total="{{ container.vulnerabilities.total if container.vulnerabilities else 0 }}">
-            <label class="container-select-checkbox" onclick="event.stopPropagation()">
+            {% if not all_hosts %}<label class="container-select-checkbox" onclick="event.stopPropagation()">
                 <input type="checkbox" class="container-checkbox" data-id="{{ container.id }}" data-name="{{ container.name }}" data-status="{{ container.status }}" onchange="updateBulkSelection()">
-            </label>
+            </label>{% endif %}
             <div class="container-header">
+                {% if all_hosts %}
+                <span class="endpoint-name-badge">{{ container.endpoint_name }}</span>
+                {% endif %}
+                {% if all_hosts %}
+                <h3 class="container-name container-name-clickable"
+                    onclick="location.href='/dashboard?endpoint_id={{ container.endpoint_id }}'"
+                    title="Open {{ container.endpoint_name }} to manage this container">{{ container.name }}</h3>
+                {% else %}
                 <h3 class="container-name container-name-clickable"
                     onclick="openContainerDetail('{{ container.id }}', '{{ container.name }}', '{{ container.image }}', '{{ container.status }}', '{{ container.has_update|lower }}')"
                     title="Click for full details and actions">{{ container.name }}</h3>
+                {% endif %}
                 <div class="header-badges">
                     {% if container.vulnerabilities and container.vulnerabilities.total > 0 %}
                     <button class="vuln-badge-btn {% if container.vulnerabilities.critical > 0 %}vuln-critical{% elif container.vulnerabilities.high > 0 %}vuln-high{% elif container.vulnerabilities.medium > 0 %}vuln-medium{% else %}vuln-low{% endif %}"
@@ -284,8 +314,8 @@
                     <a href="{{ port.url }}"
                        target="_blank"
                        rel="noopener noreferrer"
-                       class="port-link probe-link"
-                       data-host="{{ host_ip }}"
+                       class="port-link{% if not all_hosts %} probe-link{% endif %}"
+                       data-host="{{ container.endpoint_host }}"
                        data-port="{{ port.host_port }}"
                        data-container-port="{{ port.container_port }}"
                        title="Open in new tab">
@@ -301,7 +331,7 @@
             </div>
             {% endif %}
 
-            <div class="container-actions">
+            {% if not all_hosts %}<div class="container-actions">
                 <div class="btn-group">
                     {% if container.status == 'running' %}
                     <button class="btn btn-warning btn-xs" onclick="restartContainer('{{ container.id }}', '{{ container.name }}')" title="Restart container">
@@ -319,7 +349,7 @@
                         📜 <span class="action-label">Logs</span>
                     </button>
                 </div>
-            </div>
+            </div>{% endif %}
         </div>
         {% endmacro %}
 
@@ -338,7 +368,7 @@
                             {{ running_count }}/{{ project_containers|length }} running
                         </span>
                     </div>
-                    <div class="compose-group-actions" onclick="event.stopPropagation()">
+                    {% if not all_hosts %}<div class="compose-group-actions" onclick="event.stopPropagation()">
                         <button class="btn btn-success btn-xs" onclick="startComposeProject('{{ project }}')" title="Start all containers in project">
                             ▶️ Start All
                         </button>
@@ -348,7 +378,7 @@
                         <button class="btn btn-warning btn-xs" onclick="restartComposeProject('{{ project }}')" title="Restart all containers in project">
                             🔄 Restart All
                         </button>
-                    </div>
+                    </div>{% endif %}
                 </div>
                 <div class="compose-group-containers container-grid" id="compose-group-{{ project|replace(' ', '-') }}">
                     {% for container in project_containers %}
@@ -379,7 +409,7 @@
         <div class="empty-state" id="emptyState" style="display: none;">
             <span class="empty-icon">📦</span>
             <h3 id="emptyStateTitle">No containers found</h3>
-            <p id="emptyStateText">{% if show_all %}There are no Docker containers on this host.{% else %}There are no running containers. Use the "Stopped" filter to see stopped containers.{% endif %}</p>
+            <p id="emptyStateText">{% if all_hosts %}No containers are available from the reachable Docker hosts.{% elif show_all %}There are no Docker containers on this host.{% else %}There are no running containers. Use the "Stopped" filter to see stopped containers.{% endif %}</p>
         </div>
         <div class="empty-state" id="noResultsState" style="display: none;">
             <span class="empty-icon">🔍</span>
@@ -394,9 +424,12 @@
         <table class="container-table">
             <thead>
                 <tr>
+                    {% if all_hosts %}<th>Host</th>{% endif %}
+                    {% if not all_hosts %}
                     <th class="checkbox-col">
                         <input type="checkbox" id="tableSelectAll" onchange="toggleSelectAll()">
                     </th>
+                    {% endif %}
                     <th class="sortable" data-sort="name" onclick="sortByColumn('name')">
                         Container <span class="sort-icon" id="sort-name">↕</span>
                     </th>
@@ -420,16 +453,23 @@
                     data-image-full="{{ container.image }}"
                     data-created="{{ container.created }}"
                     data-id="{{ container.id }}"
+                    data-endpoint-id="{{ container.endpoint_id }}"
+                    data-endpoint-name="{{ container.endpoint_name }}"
+                    data-key="{{ container.endpoint_id }}:{{ container.id }}"
                     data-has-update="{{ 'true' if container.has_update else 'false' }}"
                     data-vuln-critical="{{ container.vulnerabilities.critical if container.vulnerabilities else 0 }}"
                     data-vuln-high="{{ container.vulnerabilities.high if container.vulnerabilities else 0 }}"
                     data-vuln-medium="{{ container.vulnerabilities.medium if container.vulnerabilities else 0 }}"
                     data-vuln-low="{{ container.vulnerabilities.low if container.vulnerabilities else 0 }}"
                     data-vuln-total="{{ container.vulnerabilities.total if container.vulnerabilities else 0 }}">
+                    {% if all_hosts %}
+                    <td><span class="endpoint-name-badge">{{ container.endpoint_name }}</span></td>
+                    {% else %}
                     <td class="checkbox-col">
                         <input type="checkbox" class="container-checkbox" data-id="{{ container.id }}" data-name="{{ container.name }}" data-status="{{ container.status }}" onchange="updateBulkSelection()">
                     </td>
-                    <td class="cell-name cell-name-clickable" onclick="openContainerDetail('{{ container.id }}', '{{ container.name }}', '{{ container.image }}', '{{ container.status }}', '{{ container.has_update|lower }}')" title="Click for full details">
+                    {% endif %}
+                    <td class="cell-name cell-name-clickable" onclick="{% if all_hosts %}location.href='/dashboard?endpoint_id={{ container.endpoint_id }}'{% else %}openContainerDetail('{{ container.id }}', '{{ container.name }}', '{{ container.image }}', '{{ container.status }}', '{{ container.has_update|lower }}'){% endif %}" title="{% if all_hosts %}Open {{ container.endpoint_name }} to manage{% else %}Click for full details{% endif %}">
                         <strong>{{ container.name }}</strong>
                     </td>
                     <td>
@@ -456,6 +496,9 @@
                         {% endif %}
                     </td>
                     <td class="cell-actions">
+                        {% if all_hosts %}
+                        <a class="btn btn-secondary btn-xs" href="/dashboard?endpoint_id={{ container.endpoint_id }}" title="Open host dashboard">Open</a>
+                        {% else %}
                         {% if container.status == 'running' %}
                         <button class="btn btn-warning btn-xs" onclick="restartContainer('{{ container.id }}', '{{ container.name }}')" title="Restart">
                             🔄
@@ -471,6 +514,7 @@
                         <button class="btn btn-secondary btn-xs" onclick="openLogs('{{ container.id }}', '{{ container.name }}')" title="Logs">
                             📜
                         </button>
+                        {% endif %}
                     </td>
                     <td class="cell-links">
                         {% if container.ports %}
@@ -479,8 +523,8 @@
                             <a href="{{ port.url }}"
                                target="_blank"
                                rel="noopener noreferrer"
-                               class="table-link probe-link"
-                               data-host="{{ host_ip }}"
+                               class="table-link{% if not all_hosts %} probe-link{% endif %}"
+                               data-host="{{ container.endpoint_host }}"
                                data-port="{{ port.host_port }}"
                                data-container-port="{{ port.container_port }}"
                                title="Open in new tab">
@@ -505,7 +549,7 @@
             <div class="empty-state">
                 <span class="empty-icon">📦</span>
                 <h3>No containers found</h3>
-                <p>{% if show_all %}There are no Docker containers on this host.{% else %}There are no running containers. Use the "Stopped" filter to see stopped containers.{% endif %}</p>
+                <p>{% if all_hosts %}No containers are available from the reachable Docker hosts.{% elif show_all %}There are no Docker containers on this host.{% else %}There are no running containers. Use the "Stopped" filter to see stopped containers.{% endif %}</p>
             </div>
         {% endif %}
     </div>

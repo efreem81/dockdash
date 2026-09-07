@@ -52,6 +52,57 @@ class AgentProtocolTests(unittest.TestCase):
         self.assertEqual(result['restart_count'], 3)
         self.assertEqual(result['exit_code'], 0)
 
+    def test_remote_update_check_route_returns_per_image_results(self):
+        update = {
+            'image': 'example:latest',
+            'has_update': True,
+            'local_digest': 'sha256:old',
+            'remote_digest': 'sha256:new',
+            'error': None,
+        }
+        with patch.object(self.agent, 'check_image_update', return_value=update):
+            response = self.agent.app.test_client().post(
+                '/v1/images/check-updates',
+                json={'images': ['example:latest']},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload['success'])
+        self.assertTrue(payload['results']['example:latest']['has_update'])
+
+    def test_remote_vulnerability_route_uses_bounded_scanner(self):
+        scan = {
+            'image': 'example:latest',
+            'success': True,
+            'scanner': 'trivy',
+            'vulnerabilities': [],
+            'summary': {'critical': 0, 'high': 0, 'medium': 0, 'low': 0, 'unknown': 0, 'total': 0},
+            'error': None,
+        }
+        with patch.object(self.agent, 'scan_image', return_value=scan) as scanner:
+            response = self.agent.app.test_client().post(
+                '/v1/security/scan',
+                json={'image': 'example:latest', 'severity': 'HIGH,CRITICAL'},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()['success'])
+        scanner.assert_called_once_with('example:latest', 'HIGH,CRITICAL')
+
+    def test_agent_rejects_image_option_injection(self):
+        response = self.agent.app.test_client().post(
+            '/v1/security/scan',
+            json={'image': '--input=/etc/shadow'},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.get_json()['success'])
+
+    def test_update_check_rejects_non_allowlisted_registry(self):
+        parsed = self.agent.parse_image_reference('registry.internal/example/app:latest')
+        with self.assertRaisesRegex(ValueError, 'not allowlisted'):
+            self.agent.remote_image_digest(parsed)
+
     def test_default_health_policy_rejects_404(self):
         response = SimpleNamespace(status_code=404)
         with patch.object(self.agent.requests, 'get', return_value=response), \

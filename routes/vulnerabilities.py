@@ -2,25 +2,22 @@
 Vulnerability API Routes
 Image security scanning endpoints
 """
+import time
+
 from flask import Blueprint, request, jsonify
 from flask_login import login_required
 
 from services.vulnerability_service import (
-    is_trivy_available, scan_image, scan_multiple_images,
+    scan_image, scan_multiple_images,
     get_vulnerability_report, clear_cache, scan_all_container_images,
     get_stored_vulnerabilities, get_scan_status, get_scan_settings,
-    update_scan_settings, scan_container_image
+    update_scan_settings, scan_container_image, save_scan_result,
+    get_image_vulnerability_details,
 )
-from services.fleet_service import get_endpoint
-
-
-def _remote_scan_error():
-    if get_endpoint().kind != 'local':
-        return jsonify({
-            'success': False,
-            'error': 'Remote vulnerability scanning is not yet installed on DockDash agents'
-        }), 409
-    return None
+from services.fleet_service import (
+    get_endpoint, scan_endpoint_images, vulnerability_status,
+    container_detail as fleet_container_detail,
+)
 
 vulnerabilities_bp = Blueprint('vulnerabilities', __name__)
 
@@ -29,41 +26,51 @@ vulnerabilities_bp = Blueprint('vulnerabilities', __name__)
 @login_required
 def api_scanner_status():
     """Check if vulnerability scanner is available."""
-    available = is_trivy_available()
-    settings = get_scan_settings()
-    return jsonify({
-        'success': True,
-        'scanner': 'trivy',
-        'available': available,
-        'message': 'Trivy scanner is ready' if available else 'Trivy not installed',
-        'settings': settings
-    })
+    endpoint = get_endpoint()
+    try:
+        status = vulnerability_status(endpoint)
+        available = bool(status.get('available'))
+        return jsonify({
+            'success': True,
+            'scanner': 'trivy',
+            'available': available,
+            'version': status.get('version'),
+            'message': 'Trivy scanner is ready' if available else 'Trivy not installed',
+            'settings': get_scan_settings(),
+        })
+    except Exception as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 502
 
 
 @vulnerabilities_bp.route('/vulnerabilities/scan')
 @login_required
 def api_scan_image():
     """Scan a single image for vulnerabilities."""
-    remote_error = _remote_scan_error()
-    if remote_error:
-        return remote_error
+    endpoint = get_endpoint()
     image = (request.args.get('image') or '').strip()
     severity = request.args.get('severity', 'CRITICAL,HIGH')
 
     if not image:
         return jsonify({'success': False, 'error': 'Image parameter required'}), 400
 
-    result = scan_image(image, severity)
-    return jsonify(result)
+    started = time.time()
+    try:
+        result = (
+            scan_endpoint_images(endpoint, image=image, severity=severity)
+            if endpoint.kind == 'agent'
+            else scan_image(image, severity)
+        )
+        save_scan_result(image, result, time.time() - started, endpoint_id=endpoint.id)
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 502
 
 
 @vulnerabilities_bp.route('/vulnerabilities/scan', methods=['POST'])
 @login_required
 def api_scan_images():
     """Scan multiple images for vulnerabilities."""
-    remote_error = _remote_scan_error()
-    if remote_error:
-        return remote_error
+    endpoint = get_endpoint()
     data = request.get_json() or {}
     images = data.get('images', [])
     severity = data.get('severity', 'CRITICAL,HIGH')
@@ -71,46 +78,45 @@ def api_scan_images():
     if not images or not isinstance(images, list):
         return jsonify({'success': False, 'error': 'images array required'}), 400
 
-    result = scan_multiple_images(images, severity)
-    return jsonify(result)
+    try:
+        result = (
+            scan_endpoint_images(endpoint, images=images, severity=severity)
+            if endpoint.kind == 'agent'
+            else scan_multiple_images(images, severity)
+        )
+        for image_ref, scan_result in result.get('results', {}).items():
+            save_scan_result(image_ref, scan_result, endpoint_id=endpoint.id)
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 502
 
 
 @vulnerabilities_bp.route('/vulnerabilities/report/<path:image_ref>')
 @login_required
 def api_vulnerability_report(image_ref):
     """Get a detailed vulnerability report for an image."""
-    result = get_vulnerability_report(image_ref)
-    return jsonify(result)
+    endpoint = get_endpoint()
+    if endpoint.kind == 'local':
+        return jsonify(get_vulnerability_report(image_ref))
+    try:
+        return jsonify(scan_endpoint_images(endpoint, image=image_ref))
+    except Exception as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 502
 
 
 @vulnerabilities_bp.route('/vulnerabilities/details/<path:image_ref>')
 @login_required
 def api_vulnerability_details(image_ref):
     """Get full vulnerability details (CVE list) for an image from stored data."""
-    from models import ImageVulnerability
-
     try:
-        vuln = ImageVulnerability.query.filter_by(image_ref=image_ref).first()
-        if not vuln:
+        endpoint = get_endpoint()
+        result = get_image_vulnerability_details(image_ref, endpoint_id=endpoint.id)
+        if not result:
             return jsonify({
                 'success': False,
                 'error': 'No scan data found for this image. Run a security scan first.'
             }), 404
-
-        return jsonify({
-            'success': True,
-            'image': vuln.image_ref,
-            'summary': {
-                'critical': vuln.critical_count,
-                'high': vuln.high_count,
-                'medium': vuln.medium_count,
-                'low': vuln.low_count,
-                'total': vuln.total_count
-            },
-            'vulnerabilities': vuln.get_vulnerabilities(),
-            'scanned_at': vuln.scanned_at.isoformat() if vuln.scanned_at else None,
-            'error': vuln.error
-        })
+        return jsonify(result)
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -127,14 +133,16 @@ def api_clear_cache():
 @login_required
 def api_scan_all_images():
     """Scan all container images for vulnerabilities."""
-    remote_error = _remote_scan_error()
-    if remote_error:
-        return remote_error
     try:
+        endpoint = get_endpoint()
         data = request.get_json(silent=True) or {}
         severity = data.get('severity')  # Use settings default if not provided
-
-        result = scan_all_container_images(severity)
+        if endpoint.kind == 'agent':
+            result = scan_endpoint_images(endpoint, severity=severity, scan_all=True)
+            for image_ref, scan_result in result.get('results', {}).items():
+                save_scan_result(image_ref, scan_result, endpoint_id=endpoint.id)
+        else:
+            result = scan_all_container_images(severity, endpoint_id=endpoint.id)
         return jsonify(result)
     except Exception as e:
         import traceback
@@ -146,7 +154,8 @@ def api_scan_all_images():
 @login_required
 def api_get_all_results():
     """Get all stored vulnerability scan results."""
-    results = get_stored_vulnerabilities()
+    endpoint = get_endpoint()
+    results = get_stored_vulnerabilities(endpoint_id=endpoint.id)
     return jsonify({
         'success': True,
         'results': results,
@@ -192,11 +201,33 @@ def api_update_scan_settings():
 @login_required
 def api_scan_container(container_id):
     """Scan a specific container's image for vulnerabilities."""
-    remote_error = _remote_scan_error()
-    if remote_error:
-        return remote_error
+    endpoint = get_endpoint()
     data = request.get_json() or {}
     force = data.get('force', True)  # Force fresh scan by default
-
-    result = scan_container_image(container_id, force=force)
-    return jsonify(result)
+    if endpoint.kind == 'local':
+        return jsonify(scan_container_image(
+            container_id,
+            force=force,
+            endpoint_id=endpoint.id,
+        ))
+    try:
+        container = fleet_container_detail(endpoint, container_id)
+        image_ref = container.get('image')
+        started = time.time()
+        scan_result = scan_endpoint_images(endpoint, image=image_ref)
+        save_scan_result(
+            image_ref,
+            scan_result,
+            time.time() - started,
+            endpoint_id=endpoint.id,
+        )
+        return jsonify({
+            'success': scan_result.get('success', False),
+            'container_id': container_id,
+            'container_name': container.get('name'),
+            'image': image_ref,
+            'scan_result': scan_result.get('summary'),
+            'error': scan_result.get('error'),
+        })
+    except Exception as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 502

@@ -7,9 +7,9 @@
 </div>
 <div class="fleet-grid">
 {% for item in endpoints %}
-  <article class="settings-section endpoint-card" data-id="{{ item.id }}">
-    <div class="section-header"><div><h2>{{ item.name }}</h2><p>{{ item.kind }}{% if item.url %} · {{ item.url }}{% endif %}</p></div><span class="status-badge status-{{ item.state_hint }}">{{ item.state_hint }}</span></div>
-    <p class="text-muted endpoint-result">{% if item.last_seen %}Last seen {{ item.last_seen }}{% else %}Not tested{% endif %}</p>
+  <article class="settings-section endpoint-card" data-id="{{ item.id }}" data-enabled="{{ 'true' if item.enabled else 'false' }}">
+    <div class="section-header"><div><h2>{{ item.name }}</h2><p>{{ item.kind }}{% if item.url %} · {{ item.url }}{% endif %}</p></div><span class="status-badge status-{{ 'checking' if item.enabled else 'disabled' }}">{{ 'checking' if item.enabled else 'disabled' }}</span></div>
+    <p class="text-muted endpoint-result">{% if item.enabled %}Checking live Docker health…{% else %}Endpoint disabled{% endif %}</p>
     <div class="action-buttons">
       <button class="btn btn-secondary" onclick="testEndpoint({{ item.id }})">Test</button>
       <button class="btn btn-primary" onclick="selectEndpoint({{ item.id }})">Open dashboard</button>

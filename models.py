@@ -198,11 +198,20 @@ class Endpoint(db.Model):
     enabled = db.Column(db.Boolean, nullable=False, default=True)
     tls_server_name = db.Column(db.String(255), nullable=True)
     last_seen = db.Column(db.DateTime, nullable=True)
+    last_checked = db.Column(db.DateTime, nullable=True)
     last_error = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def to_dict(self):
+        if self.enabled is False:
+            status = 'disabled'
+        elif self.last_checked is None:
+            status = 'unknown'
+        elif self.last_error:
+            status = 'offline'
+        else:
+            status = 'online'
         return {
             'id': self.id,
             'name': self.name,
@@ -211,7 +220,9 @@ class Endpoint(db.Model):
             'public_ip': self.public_ip,
             'state_hint': self.state_hint,
             'enabled': self.enabled,
+            'status': status,
             'last_seen': self.last_seen.isoformat() if self.last_seen else None,
+            'last_checked': self.last_checked.isoformat() if self.last_checked else None,
             'last_error': self.last_error,
         }
 

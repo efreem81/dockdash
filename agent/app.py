@@ -20,6 +20,29 @@ from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 MAX_OUTPUT = int(os.environ.get('DOCKDASH_AGENT_MAX_OUTPUT', '50000'))
+MAX_SCAN_RESULT_BYTES = int(os.environ.get('DOCKDASH_AGENT_MAX_SCAN_RESULT_BYTES', str(32 * 1024 * 1024)))
+MAX_SCAN_FINDINGS = int(os.environ.get('DOCKDASH_AGENT_MAX_SCAN_FINDINGS', '5000'))
+TEMP_ROOT = tempfile.gettempdir()
+TRIVY_CACHE_DIR = os.environ.get(
+    'DOCKDASH_TRIVY_CACHE_DIR',
+    os.path.join(TEMP_ROOT, 'dockdash-trivy-cache'),
+)
+UPDATE_REGISTRIES = {
+    value.strip().lower()
+    for value in os.environ.get(
+        'DOCKDASH_AGENT_UPDATE_REGISTRIES',
+        'docker.io,ghcr.io,lscr.io,quay.io,gcr.io,registry.k8s.io,public.ecr.aws,mcr.microsoft.com',
+    ).split(',')
+    if value.strip()
+}
+UPDATE_AUTH_HOSTS = {
+    value.strip().lower()
+    for value in os.environ.get(
+        'DOCKDASH_AGENT_UPDATE_AUTH_HOSTS',
+        'ghcr.io,quay.io,gcr.io,registry.k8s.io,auth.linuxserver.io,lscr.io,public.ecr.aws,mcr.microsoft.com',
+    ).split(',')
+    if value.strip()
+}
 MIN_FREE_BYTES = int(os.environ.get('DOCKDASH_AGENT_MIN_FREE_BYTES', str(1024 ** 3)))
 MANAGED_ROOT = os.path.realpath(os.environ.get('DOCKDASH_MANAGED_ROOT', '/opt/dockdash-managed'))
 ROOTS = [os.path.realpath(p) for p in os.environ.get(
@@ -64,6 +87,246 @@ def format_bytes(size):
         if value < 1024 or unit == 'TB':
             return f'{value:.1f} {unit}'
         value /= 1024
+
+
+def validated_image_ref(value):
+    """Accept a bounded Docker reference without option or control injection."""
+    image_ref = str(value or '').strip()
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._/@:+-]{0,499}', image_ref):
+        raise ValueError('Invalid image reference')
+    return image_ref
+
+
+def severity_filter(value):
+    requested = [item.strip().upper() for item in str(value or '').split(',') if item.strip()]
+    allowed = {'UNKNOWN', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'}
+    if not requested:
+        requested = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
+    if any(item not in allowed for item in requested):
+        raise ValueError('Invalid vulnerability severity filter')
+    return ','.join(dict.fromkeys(requested))
+
+
+def scan_image(image_ref, severities=None):
+    """Scan the exact image available to this Docker daemon with bounded output."""
+    image_ref = validated_image_ref(image_ref)
+    severities = severity_filter(severities)
+    result = {
+        'image': image_ref,
+        'success': False,
+        'scanner': 'trivy',
+        'vulnerabilities': [],
+        'summary': {
+            'critical': 0, 'high': 0, 'medium': 0,
+            'low': 0, 'unknown': 0, 'total': 0,
+        },
+        'error': None,
+    }
+    if not shutil.which('trivy'):
+        result['error'] = 'Trivy scanner is unavailable on this agent'
+        return result
+
+    try:
+        scan_target = client().images.get(image_ref).id
+    except Exception as exc:
+        result['error'] = f'Image is not present on this Docker host: {exc}'
+        return result
+
+    if os.path.lexists(TRIVY_CACHE_DIR) and os.path.islink(TRIVY_CACHE_DIR):
+        result['error'] = 'Trivy cache path must not be a symlink'
+        return result
+    os.makedirs(TRIVY_CACHE_DIR, mode=0o700, exist_ok=True)
+    os.chmod(TRIVY_CACHE_DIR, 0o700)
+    fd, output_path = tempfile.mkstemp(
+        prefix='dockdash-trivy-',
+        suffix='.json',
+        dir=TEMP_ROOT,
+    )
+    os.close(fd)
+    try:
+        run([
+            'trivy', 'image', '--cache-dir', TRIVY_CACHE_DIR,
+            '--scanners', 'vuln', '--format', 'json', '--severity', severities,
+            '--output', output_path, '--', scan_target,
+        ], timeout=600)
+        if os.path.getsize(output_path) > MAX_SCAN_RESULT_BYTES:
+            raise RuntimeError('Trivy result exceeded the configured response limit')
+        with open(output_path, encoding='utf-8') as handle:
+            scan_data = json.load(handle)
+
+        findings = []
+        summary = result['summary']
+        for target in scan_data.get('Results') or []:
+            for vulnerability in target.get('Vulnerabilities') or []:
+                severity = str(vulnerability.get('Severity') or 'UNKNOWN').lower()
+                summary[severity if severity in summary else 'unknown'] += 1
+                summary['total'] += 1
+                if len(findings) >= MAX_SCAN_FINDINGS:
+                    continue
+                cvss_score = None
+                for source in (vulnerability.get('CVSS') or {}).values():
+                    cvss_score = source.get('V3Score', source.get('V2Score'))
+                    if cvss_score is not None:
+                        break
+                findings.append({
+                    'id': vulnerability.get('VulnerabilityID', ''),
+                    'package': vulnerability.get('PkgName', ''),
+                    'version': vulnerability.get('InstalledVersion', ''),
+                    'fixed_version': vulnerability.get('FixedVersion', ''),
+                    'severity': str(vulnerability.get('Severity') or 'UNKNOWN').upper(),
+                    'title': vulnerability.get('Title', ''),
+                    'description': (vulnerability.get('Description') or '')[:200],
+                    'target': target.get('Target', 'unknown'),
+                    'type': target.get('Type', 'unknown'),
+                    'cvss_score': cvss_score,
+                    'references': (vulnerability.get('References') or [])[:3],
+                })
+        result.update({
+            'success': True,
+            'vulnerabilities': findings,
+            'findings_truncated': summary['total'] > len(findings),
+            'scanned_at': datetime.now(timezone.utc).isoformat(),
+        })
+    except Exception as exc:
+        result['error'] = str(exc)[-2000:]
+    finally:
+        if os.path.exists(output_path):
+            os.unlink(output_path)
+    return result
+
+
+def scan_images(image_refs, severities=None):
+    unique_refs = list(dict.fromkeys(validated_image_ref(item) for item in image_refs))
+    if not unique_refs or len(unique_refs) > 50:
+        raise ValueError('Between 1 and 50 image references are required')
+    results = {image_ref: scan_image(image_ref, severities) for image_ref in unique_refs}
+    totals = {'critical': 0, 'high': 0, 'medium': 0, 'low': 0, 'unknown': 0, 'total': 0}
+    for scan_result in results.values():
+        if scan_result.get('success'):
+            for key in totals:
+                totals[key] += scan_result.get('summary', {}).get(key, 0)
+    return {
+        'success': True,
+        'results': results,
+        'total_summary': totals,
+        'images_scanned': len(results),
+    }
+
+
+def parse_image_reference(image_ref):
+    image_ref = validated_image_ref(image_ref)
+    parsed = {'registry': 'docker.io', 'namespace': 'library', 'repo': '', 'tag': 'latest'}
+    if '@sha256:' in image_ref:
+        image_ref, parsed['digest'] = image_ref.split('@', 1)
+        parsed['tag'] = None
+    elif ':' in image_ref.rsplit('/', 1)[-1]:
+        image_ref, parsed['tag'] = image_ref.rsplit(':', 1)
+    parts = image_ref.split('/')
+    if len(parts) == 1:
+        parsed['repo'] = parts[0]
+    elif len(parts) == 2 and not ('.' in parts[0] or ':' in parts[0] or parts[0] == 'localhost'):
+        parsed['namespace'], parsed['repo'] = parts
+    else:
+        parsed['registry'] = parts[0]
+        parsed['namespace'] = parts[1] if len(parts) > 2 else ''
+        parsed['repo'] = '/'.join(parts[2:] if len(parts) > 2 else parts[1:])
+    return parsed
+
+
+def remote_image_digest(parsed):
+    registry = parsed['registry']
+    docker_hub_names = {'docker.io', 'registry.hub.docker.com', 'index.docker.io'}
+    registry_key = 'docker.io' if registry in docker_hub_names else registry.lower()
+    if registry_key not in UPDATE_REGISTRIES:
+        raise ValueError('Image registry is not allowlisted for update checks')
+    repository = '/'.join(value for value in (parsed['namespace'], parsed['repo']) if value)
+    tag = parsed.get('tag') or 'latest'
+    headers = {
+        'Accept': ', '.join([
+            'application/vnd.oci.image.index.v1+json',
+            'application/vnd.oci.image.manifest.v1+json',
+            'application/vnd.docker.distribution.manifest.list.v2+json',
+            'application/vnd.docker.distribution.manifest.v2+json',
+        ]),
+    }
+    if registry in docker_hub_names:
+        response = requests.get(
+            'https://auth.docker.io/token',
+            params={'service': 'registry.docker.io', 'scope': f'repository:{repository}:pull'},
+            timeout=10,
+        )
+        response.raise_for_status()
+        headers['Authorization'] = f"Bearer {response.json()['token']}"
+        registry = 'registry-1.docker.io'
+    manifest_url = f'https://{registry}/v2/{repository}/manifests/{tag}'
+    response = requests.head(
+        manifest_url,
+        headers=headers,
+        timeout=10,
+        allow_redirects=False,
+    )
+    challenge = response.headers.get('WWW-Authenticate', '')
+    if response.status_code == 401 and challenge.lower().startswith('bearer '):
+        parameters = requests.utils.parse_dict_header(challenge[7:])
+        realm = parameters.get('realm')
+        parsed_realm = urlparse(realm or '')
+        if (
+            parsed_realm.scheme != 'https'
+            or not parsed_realm.hostname
+            or parsed_realm.hostname.lower() not in UPDATE_AUTH_HOSTS
+        ):
+            raise RuntimeError('Registry returned an invalid authentication challenge')
+        token_response = requests.get(
+            realm,
+            params={
+                key: value for key, value in {
+                    'service': parameters.get('service'),
+                    'scope': parameters.get('scope') or f'repository:{repository}:pull',
+                }.items() if value
+            },
+            timeout=10,
+            allow_redirects=False,
+        )
+        token_response.raise_for_status()
+        token = token_response.json().get('token') or token_response.json().get('access_token')
+        if not token:
+            raise RuntimeError('Registry authentication response contained no token')
+        headers['Authorization'] = f'Bearer {token}'
+        response = requests.head(
+            manifest_url,
+            headers=headers,
+            timeout=10,
+            allow_redirects=False,
+        )
+    response.raise_for_status()
+    return response.headers.get('Docker-Content-Digest')
+
+
+def check_image_update(image_ref):
+    image_ref = validated_image_ref(image_ref)
+    result = {
+        'image': image_ref, 'has_update': None, 'local_digest': None,
+        'remote_digest': None, 'error': None,
+    }
+    try:
+        parsed = parse_image_reference(image_ref)
+        if parsed.get('digest'):
+            result['error'] = 'Image is pinned by immutable digest'
+            return result
+        image = client().images.get(image_ref)
+        repo_digests = image.attrs.get('RepoDigests') or []
+        local_digest = next((value.split('@', 1)[1] for value in repo_digests if '@' in value), image.id)
+        remote_digest = remote_image_digest(parsed)
+        result.update({
+            'local_digest': local_digest,
+            'remote_digest': remote_digest,
+            'has_update': bool(remote_digest and local_digest != remote_digest),
+        })
+        if not remote_digest:
+            result['error'] = 'Registry did not return an image digest'
+    except Exception as exc:
+        result['error'] = str(exc)
+    return result
 
 
 def container_info(container):
@@ -418,6 +681,78 @@ def images():
             'created': attrs.get('Created'), 'repo_digests': attrs.get('RepoDigests') or [],
         })
     return ok(images=result)
+
+
+@app.post('/v1/images/check-updates')
+def check_updates():
+    try:
+        data = request.get_json(silent=True) or {}
+        image_refs = data.get('images')
+        if image_refs is None:
+            image_refs = [
+                container.image.tags[0]
+                for container in client().containers.list(all=True)
+                if container.image and container.image.tags
+            ]
+        if not isinstance(image_refs, list):
+            return fail('Images must be an array')
+        unique_refs = list(dict.fromkeys(validated_image_ref(item) for item in image_refs))
+        if not unique_refs or len(unique_refs) > 50:
+            return fail('Between 1 and 50 image references are required')
+        results = {image_ref: check_image_update(image_ref) for image_ref in unique_refs}
+        return ok(
+            results=results,
+            images_checked=len(results),
+            updates_found=sum(result.get('has_update') is True for result in results.values()),
+            errors=sum(bool(result.get('error')) for result in results.values()),
+        )
+    except Exception as exc:
+        return fail(exc, 500)
+
+
+@app.get('/v1/security/status')
+def security_status():
+    available = shutil.which('trivy') is not None
+    version = None
+    if available:
+        try:
+            version = run(['trivy', '--version'], timeout=10).splitlines()[0]
+        except Exception:
+            available = False
+    return ok(scanner='trivy', available=available, version=version)
+
+
+@app.post('/v1/security/scan')
+def security_scan():
+    try:
+        data = request.get_json(silent=True) or {}
+        severities = data.get('severity')
+        if data.get('image'):
+            return jsonify(scan_image(data['image'], severities))
+        image_refs = data.get('images')
+        if not isinstance(image_refs, list):
+            return fail('An image or images array is required')
+        return jsonify(scan_images(image_refs, severities))
+    except ValueError as exc:
+        return fail(exc)
+    except Exception as exc:
+        return fail(exc, 500)
+
+
+@app.post('/v1/security/scan-all')
+def security_scan_all():
+    try:
+        data = request.get_json(silent=True) or {}
+        image_refs = [
+            container.image.tags[0]
+            for container in client().containers.list(all=True)
+            if container.image and container.image.tags
+        ]
+        return jsonify(scan_images(image_refs, data.get('severity')))
+    except ValueError as exc:
+        return fail(exc)
+    except Exception as exc:
+        return fail(exc, 500)
 
 
 @app.post('/v1/images/pull')

@@ -6,7 +6,7 @@
 const _dockdashNativeFetch = window.fetch.bind(window);
 window.fetch = function(input, init) {
     const endpointId = document.querySelector('.dashboard')?.dataset.endpointId;
-    if (endpointId && typeof input === 'string' && input.startsWith('/api/') && !input.includes('endpoint_id=')) {
+    if (endpointId && endpointId !== 'all' && typeof input === 'string' && input.startsWith('/api/') && !input.includes('endpoint_id=')) {
         input += `${input.includes('?') ? '&' : '?'}endpoint_id=${encodeURIComponent(endpointId)}`;
     }
     return _dockdashNativeFetch(input, init);
@@ -111,7 +111,9 @@ document.addEventListener('DOMContentLoaded', function() {
             status: card.dataset.status,
             image: card.dataset.image,
             created: card.dataset.created,
-            id: card.dataset.id
+            id: card.dataset.id,
+            endpointName: (card.dataset.endpointName || '').toLowerCase(),
+            key: card.dataset.key || card.dataset.id
         });
     });
 
@@ -185,11 +187,15 @@ document.addEventListener('DOMContentLoaded', function() {
         stoppedFilter.addEventListener('change', function() {
             const pageShowAll = dashboardEl?.dataset.showAll === 'true';
             if (this.checked && !pageShowAll) {
-                window.location.href = '/dashboard?show_all=true';
+                const url = new URL(window.location.href);
+                url.searchParams.set('show_all', 'true');
+                window.location.href = url.toString();
                 return;
             }
             if (!this.checked && pageShowAll) {
-                window.location.href = '/dashboard?show_all=false';
+                const url = new URL(window.location.href);
+                url.searchParams.set('show_all', 'false');
+                window.location.href = url.toString();
                 return;
             }
             applyFilters();
@@ -256,7 +262,8 @@ function filterContainers() {
             c.name.includes(searchTerm) ||
             c.image.includes(searchTerm) ||
             c.status.includes(searchTerm) ||
-            c.id.includes(searchTerm)
+            c.id.includes(searchTerm) ||
+            c.endpointName.includes(searchTerm)
         );
     }
     applySort();
@@ -406,13 +413,13 @@ function renderContainers() {
     if (bottomPagination) bottomPagination.style.display = paginationNeeded ? 'flex' : 'none';
 
     // Get set of visible container IDs
-    const visibleIds = new Set(pagedContainers.map(c => c.id));
+    const visibleKeys = new Set(pagedContainers.map(c => c.key));
 
     // Render card view
     const cardGrid = document.getElementById('containerGrid');
     const cards = cardGrid.querySelectorAll('.container-card[data-id]');
     cards.forEach(card => {
-        card.style.display = visibleIds.has(card.dataset.id) ? '' : 'none';
+        card.style.display = visibleKeys.has(card.dataset.key || card.dataset.id) ? '' : 'none';
     });
 
     // Render table view
@@ -420,7 +427,7 @@ function renderContainers() {
     if (tableBody) {
         const rows = tableBody.querySelectorAll('tr[data-id]');
         rows.forEach(row => {
-            row.style.display = visibleIds.has(row.dataset.id) ? '' : 'none';
+            row.style.display = visibleKeys.has(row.dataset.key || row.dataset.id) ? '' : 'none';
         });
     }
 
@@ -439,12 +446,12 @@ function renderContainers() {
     // Reorder DOM elements to match sort order
     if (currentView === 'card') {
         pagedContainers.forEach(c => {
-            const card = cardGrid.querySelector(`.container-card[data-id="${c.id}"]`);
+            const card = cardGrid.querySelector(`.container-card[data-key="${c.key}"]`);
             if (card) cardGrid.appendChild(card);
         });
     } else if (tableBody) {
         pagedContainers.forEach(c => {
-            const row = tableBody.querySelector(`tr[data-id="${c.id}"]`);
+            const row = tableBody.querySelector(`tr[data-key="${c.key}"]`);
             if (row) tableBody.appendChild(row);
         });
     }
@@ -857,6 +864,7 @@ async function checkAllImageUpdates() {
 function displayImageUpdates(results) {
     let updateCount = 0;
     const containersWithUpdates = new Set();
+    const errorCount = Object.values(results).filter(result => result?.error).length;
 
     // Update all badges in card view and set data attributes
     document.querySelectorAll('.container-card').forEach(card => {
@@ -960,7 +968,9 @@ function displayImageUpdates(results) {
 
     // Only show toast if this was a fresh check (not loaded from storage)
     if (Object.keys(results).length > 0 && document.getElementById('checkUpdatesBtn')?.disabled === false) {
-        if (updateCount > 0) {
+        if (errorCount > 0) {
+            showToast('warning', `${updateCount} update${updateCount === 1 ? '' : 's'} found; ${errorCount} image check${errorCount === 1 ? '' : 's'} could not complete`);
+        } else if (updateCount > 0) {
             showToast('info', `${updateCount} image update${updateCount > 1 ? 's' : ''} available`);
         } else {
             showToast('success', 'All images are up to date');
@@ -1993,8 +2003,8 @@ async function updateAllContainers() {
 
 // Load stored updates on page load
 document.addEventListener('DOMContentLoaded', function() {
-    // Load stored update status
-    loadStoredUpdates();
+    const allHosts = document.querySelector('.dashboard')?.dataset.allHosts === 'true';
+    if (!allHosts) loadStoredUpdates();
 
     // Restore collapsed compose groups
     restoreCollapsedGroups();
@@ -2040,6 +2050,9 @@ async function openContainerDetail(containerId, containerName, containerImage, c
 function renderContainerDetailModal(name, image, status, hasUpdate, containerData) {
     const content = document.getElementById('containerDetailContent');
     const isRunning = status === 'running';
+    const dashboard = document.querySelector('.dashboard');
+    const isRemote = dashboard?.dataset.endpointKind === 'agent';
+    const endpointId = dashboard?.dataset.endpointId;
 
     // Build vulnerability summary
     let vulnHtml = '';
@@ -2093,7 +2106,7 @@ function renderContainerDetailModal(name, image, status, hasUpdate, containerDat
     if (ports.length > 0) {
         linksHtml = '<div class="links-list">';
         for (const port of ports) {
-            const url = `http://${window.location.hostname}:${port.host_port}`;
+            const url = port.url || `http://${window.location.hostname}:${port.host_port}`;
             linksHtml += `<a href="${url}" target="_blank" class="link-item" rel="noopener noreferrer">🔗 :${port.host_port} → :${port.container_port}</a>`;
         }
         linksHtml += '</div>';
@@ -2166,12 +2179,16 @@ function renderContainerDetailModal(name, image, status, hasUpdate, containerDat
                         🗑️ Delete
                     </button>
                 `}
-                <button class="btn btn-info" onclick="closeContainerDetail(); recreateContainer('${currentDetailContainerId}', '${escapeHtml(name)}');">
+                ${!isRemote ? `<button class="btn btn-info" onclick="closeContainerDetail(); recreateContainer('${currentDetailContainerId}', '${escapeHtml(name)}');">
                     🔃 Recreate
-                </button>
-                ${hasUpdate ? `
+                </button>` : ''}
+                ${hasUpdate && !isRemote ? `
                     <button class="btn btn-success action-btn-primary" onclick="closeContainerDetail(); updateContainer('${currentDetailContainerId}', '${escapeHtml(name)}');">
                         ⬆️ Update to Latest
+                    </button>
+                ` : hasUpdate && isRemote ? `
+                    <button class="btn btn-success action-btn-primary" onclick="location.href='/projects?endpoint_id=${encodeURIComponent(endpointId)}';">
+                        ⬆️ Deploy via Projects
                     </button>
                 ` : `
                     <button class="btn btn-secondary" onclick="checkSingleContainerUpdate('${currentDetailContainerId}', '${escapeHtml(image)}');">
@@ -2191,7 +2208,7 @@ function renderContainerDetailModal(name, image, status, hasUpdate, containerDat
                 <button class="btn btn-secondary" onclick="closeContainerDetail(); openInspect('${currentDetailContainerId}', '${escapeHtml(name)}');">
                     🔍 Inspect
                 </button>
-                ${isRunning ? `
+                ${isRunning && !isRemote ? `
                     <button class="btn btn-secondary" onclick="closeContainerDetail(); openExec('${currentDetailContainerId}', '${escapeHtml(name)}');">
                         💻 Execute Command
                     </button>
@@ -2286,7 +2303,7 @@ async function checkSingleContainerUpdate(containerId, image) {
         const data = await response.json();
 
         if (data.success) {
-            if (data.update_available) {
+            if (data.has_update) {
                 showToast('success', 'Update available! Refreshing...');
                 setTimeout(() => location.reload(), 1000);
             } else {

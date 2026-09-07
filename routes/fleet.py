@@ -74,8 +74,10 @@ def api_update_endpoint(endpoint_id):
 @login_required
 def api_test_endpoint(endpoint_id):
     endpoint = db.get_or_404(Endpoint, endpoint_id)
+    if not endpoint.enabled:
+        return jsonify(success=False, endpoint=endpoint.to_dict(), error='Endpoint is disabled'), 409
     try:
-        result = endpoint_health(endpoint)
+        result = endpoint_health(endpoint, timeout=5)
         return jsonify(success=True, endpoint=endpoint.to_dict(), system=result.get('system'))
     except Exception as exc:
         return jsonify(success=False, endpoint=endpoint.to_dict(), error=str(exc)), 502

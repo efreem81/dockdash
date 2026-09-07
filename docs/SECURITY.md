@@ -77,7 +77,8 @@ The provided agent Compose definitions:
 - use a read-only root filesystem;
 - drop all Linux capabilities;
 - set `no-new-privileges`;
-- provide small `noexec,nosuid` temporary filesystems;
+- provide `noexec,nosuid` temporary filesystems, including a 2 GiB `/tmp`
+  ceiling for the pinned Trivy database and bounded scan results;
 - mount adopted Compose and runtime-data paths read-only;
 - mount `/mnt` read-only for mountpoint preflight checks;
 - allow writes only below the configured managed root (normally
@@ -104,7 +105,11 @@ The remote API is intentionally narrower than the Docker API:
 - Remote container operations: inventory, details, stats, logs, start, stop,
   restart, and remove.
 - Remote image operations: inventory, pull, delete, dangling-image prune, and
-  unused-volume prune.
+  unused-volume prune. Registry digest checks are restricted to configured
+  registry and HTTPS bearer-token host allowlists.
+- Remote vulnerability operations: scanner status and bounded Trivy scans of
+  images already present on the selected host. The agent resolves the supplied
+  reference with its local Docker daemon and scans the immutable local image ID.
 - Compose operations: discover, validate, start, stop, restart, pull, up,
   recreate, logs, scale, and down without volumes.
 - Managed and Git-backed projects are confined below the managed root.
@@ -120,6 +125,13 @@ Every path is canonicalized after symlink resolution and must stay within an
 allowlisted root. Compose commands use fixed argument vectors with `shell=False`.
 Project routes re-resolve the project within the explicitly selected endpoint,
 and explicit invalid or disabled endpoint selections fail closed.
+
+Remote update and vulnerability APIs do not accept arbitrary URLs, registry
+credentials, filesystem targets, or Trivy arguments. Image references and
+severity values are validated; update checks fail closed for registries or
+authentication realms outside their allowlists. Trivy uses a private,
+symlink-rejecting cache below `/tmp`, caps JSON input and detailed findings, and
+runs with fixed argument vectors and `shell=False`.
 
 The controller sends authoritative project paths and health settings from its
 database. User-supplied job options are filtered by action. The worker serializes

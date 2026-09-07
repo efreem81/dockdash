@@ -38,7 +38,9 @@ Remote agents bind TCP/9002 to an explicit management IP.
 
 ## Endpoint model
 
-An endpoint represents exactly one Docker daemon. Each browser request resolves
+An endpoint represents exactly one Docker daemon. The Fleet page performs fresh
+health requests and records both the check time and any error; it does not use a
+manually entered state hint as evidence that a host is online. Each browser request resolves
 an enabled endpoint from an explicit endpoint ID, request header, query string,
 or the authenticated session. An explicitly invalid or disabled endpoint fails
 closed. Projects are unique by endpoint and name, and project routes verify both
@@ -52,8 +54,18 @@ URL.
 ## Inventory and lifecycle behavior
 
 The dashboard can inventory containers and images from the selected endpoint.
+Its **All Hosts** option queries every enabled endpoint with a bounded timeout,
+shows inventory from each reachable host, labels every container with its
+owner, and reports unavailable hosts separately. This consolidated view is
+read-only; lifecycle and deployment controls require selecting the owning host.
 For remote endpoints, the agent returns container details with likely secret
 environment variables and labels redacted.
+
+Update and vulnerability results are stored with endpoint scope. The same image
+tag on two hosts cannot overwrite the other host's result. Update checks run on
+the owning agent and compare that host's local digest with the allowlisted
+registry. Trivy runs on the owning agent against the immutable local image ID,
+not an arbitrary registry target.
 
 Container operations are immediate. Compose project mutations are queued:
 
@@ -144,6 +156,12 @@ constructs fixed argument arrays without invoking a shell. Remote exec, arbitrar
 commands, full system prune, and volume-destructive Compose down are deliberately
 unavailable. Unused-volume prune is exposed as an explicit host-wide cleanup
 action and must be treated as destructive.
+
+Agent security scans use a pinned Trivy build, fixed argument vectors, validated
+image references, a local-image existence check, a 10-minute per-image timeout,
+bounded JSON and finding counts, and a private cache in the ephemeral `/tmp`
+tmpfs. Update requests are limited to explicitly allowlisted HTTPS registries
+and bearer-token hosts to prevent arbitrary network probing.
 
 See [Security](SECURITY.md) for the mTLS, network, filesystem, certificate, and
 residual-risk contract.

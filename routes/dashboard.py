@@ -23,47 +23,75 @@ def index():
 @dashboard_bp.route('/dashboard')
 @login_required
 def dashboard():
-    endpoint = get_endpoint(remember=True)
     show_all = request.args.get('show_all', 'false').lower() == 'true'
-    try:
-        containers = list_containers(endpoint, show_all=show_all)
-        docker_available = True
-    except Exception:
-        containers = []
-        docker_available = False
-    host_ip = endpoint.public_ip or get_host_ip()
     endpoints = Endpoint.query.filter_by(enabled=True).order_by(Endpoint.name).all()
+    all_hosts = request.args.get('endpoint_id') == 'all'
+    endpoint = None if all_hosts else get_endpoint(remember=True)
+    endpoint_errors = []
+    available_endpoint_count = 0
+    containers = []
 
     # Get vulnerability scan results
     from services.vulnerability_service import get_stored_vulnerabilities
-    vuln_results = get_stored_vulnerabilities()
-
-    # Get update check results
     from services.update_service import get_stored_updates
-    update_results = get_stored_updates()
+
+    vuln_results = {}
+    update_results = {}
+    selected_endpoints = endpoints if all_hosts else [endpoint]
+    for selected_endpoint in selected_endpoints:
+        try:
+            endpoint_containers = list_containers(
+                selected_endpoint,
+                show_all=show_all,
+                timeout=5 if all_hosts else None,
+            )
+            available_endpoint_count += 1
+        except Exception as exc:
+            endpoint_containers = []
+            endpoint_errors.append({
+                'id': selected_endpoint.id,
+                'name': selected_endpoint.name,
+                'error': str(exc),
+            })
+
+        endpoint_vulnerabilities = get_stored_vulnerabilities(endpoint_id=selected_endpoint.id)
+        endpoint_updates = get_stored_updates(endpoint_id=selected_endpoint.id)
+        for image_ref, result in endpoint_vulnerabilities.items():
+            vuln_results[f'{selected_endpoint.id}:{image_ref}'] = result
+        for image_ref, result in endpoint_updates.items():
+            update_results[f'{selected_endpoint.id}:{image_ref}'] = result
+
+        endpoint_host = selected_endpoint.public_ip or (
+            get_host_ip() if selected_endpoint.kind == 'local' else None
+        )
+        for container in endpoint_containers:
+            container['endpoint_id'] = selected_endpoint.id
+            container['endpoint_name'] = selected_endpoint.name
+            container['endpoint_host'] = endpoint_host
+            image_ref = container.get('image', '')
+            if image_ref in endpoint_vulnerabilities:
+                container['vulnerabilities'] = endpoint_vulnerabilities[image_ref]
+            if image_ref in endpoint_updates:
+                container['has_update'] = endpoint_updates[image_ref].get('has_update', False)
+            containers.append(container)
+
+    docker_available = available_endpoint_count > 0
+    host_ip = None if all_hosts else (endpoint.public_ip or get_host_ip())
 
     # Group containers by compose project
     compose_groups = {}
     standalone = []
     updates_count = 0
     for c in containers:
-        # Attach vulnerability data to each container
-        image = c.get('image', '')
-        if image in vuln_results:
-            c['vulnerabilities'] = vuln_results[image]
-
-        # Attach update data to each container
-        if image in update_results:
-            has_update = update_results[image].get('has_update', False)
-            c['has_update'] = has_update
-            if has_update:
-                updates_count += 1
+        if c.get('has_update'):
+            updates_count += 1
 
         project = c.get('compose_project')
         if project:
-            if project not in compose_groups:
-                compose_groups[project] = []
-            compose_groups[project].append(c)
+            group_name = f"{c['endpoint_name']} / {project}" if all_hosts else project
+            if group_name not in compose_groups:
+                compose_groups[group_name] = []
+            compose_groups[group_name].append(c)
         else:
             standalone.append(c)
 
@@ -78,7 +106,10 @@ def dashboard():
                          update_results=update_results,
                          updates_count=updates_count,
                          endpoint=endpoint,
-                         endpoints=endpoints)
+                         endpoints=endpoints,
+                         all_hosts=all_hosts,
+                         endpoint_errors=endpoint_errors,
+                         available_endpoint_count=available_endpoint_count)
 
 
 @dashboard_bp.route('/health')
