@@ -30,7 +30,10 @@ def endpoint_add(args):
 
 def endpoint_list(_args):
     for endpoint in Endpoint.query.order_by(Endpoint.id):
-        print(f'{endpoint.id}\t{endpoint.name}\t{endpoint.kind}\t{endpoint.url or "-"}\t{endpoint.state_hint}')
+        print(
+            f'{endpoint.id}\t{endpoint.name}\t{endpoint.kind}\t'
+            f'{endpoint.url or "-"}\t{endpoint.to_dict()["status"]}'
+        )
 
 
 def _endpoint_by_name(name):

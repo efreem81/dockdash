@@ -40,10 +40,11 @@ Remote agents bind TCP/9002 to an explicit management IP.
 
 An endpoint represents exactly one Docker daemon. The Fleet page performs fresh
 health requests and records both the check time and any error; it does not use a
-manually entered state hint as evidence that a host is online. Each browser request resolves
-an enabled endpoint from an explicit endpoint ID, request header, query string,
-or the authenticated session. An explicitly invalid or disabled endpoint fails
-closed. Projects are unique by endpoint and name, and project routes verify both
+manually entered state hint as evidence that a host is online. Each browser
+request resolves an enabled endpoint from an explicit endpoint ID, request
+header, query string, or the authenticated session. An explicitly invalid or
+disabled endpoint fails closed. Projects are unique by endpoint and name, and
+project routes verify both
 identifiers before reading or mutating state.
 
 Agent endpoints require an HTTPS URL without embedded credentials. The
