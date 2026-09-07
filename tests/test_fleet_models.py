@@ -4,6 +4,7 @@ import unittest
 
 from config import create_app, db
 from models import ComposeProject, DeploymentRevision, Endpoint
+from services.fleet_service import normalize_container
 
 
 class FleetModelTests(unittest.TestCase):
@@ -37,6 +38,28 @@ class FleetModelTests(unittest.TestCase):
             self.assertEqual(project.required_mounts, ['/mnt/data'])
             self.assertEqual(project.healthcheck_statuses, [401])
             self.assertEqual(revision.image_state['app']['image_id'], 'sha256:abc')
+
+    def test_remote_container_schema_has_dashboard_defaults_and_links(self):
+        endpoint = Endpoint(
+            name='test-agent',
+            kind='agent',
+            url='https://agent.internal:9002',
+            public_ip='192.0.2.10',
+        )
+
+        result = normalize_container(endpoint, {
+            'id': 'abc123',
+            'name': 'example',
+            'status': 'running',
+            'image': 'example:latest',
+            'created': '2026-09-07 10:00:00',
+            'ports': [{'container_port': '80', 'host_port': '8080'}],
+        })
+
+        self.assertEqual(result['restart_count'], 0)
+        self.assertIsNone(result['image_digest'])
+        self.assertEqual(result['ports'][0]['url'], 'http://192.0.2.10:8080')
+        self.assertEqual(result['urls'], ['http://192.0.2.10:8080'])
 
 
 if __name__ == '__main__':

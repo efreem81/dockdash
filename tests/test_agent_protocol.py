@@ -28,6 +28,30 @@ class AgentProtocolTests(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
         self.assertFalse(response.get_json()['success'])
 
+    def test_container_info_includes_dashboard_restart_fields(self):
+        container = SimpleNamespace(
+            id='a' * 64,
+            short_id='a' * 12,
+            name='example',
+            status='running',
+            image=SimpleNamespace(id='sha256:image', tags=['example:latest']),
+            attrs={
+                'Created': '2026-09-07T10:00:00Z',
+                'RestartCount': 3,
+                'Config': {'Image': 'example:latest', 'Labels': {}, 'Env': []},
+                'State': {'ExitCode': 0},
+                'NetworkSettings': {'Ports': {}, 'Networks': {}},
+                'Mounts': [],
+            },
+        )
+
+        result = self.agent.container_info(container)
+
+        self.assertEqual(result['id'], container.id)
+        self.assertEqual(result['full_id'], container.id)
+        self.assertEqual(result['restart_count'], 3)
+        self.assertEqual(result['exit_code'], 0)
+
     def test_default_health_policy_rejects_404(self):
         response = SimpleNamespace(status_code=404)
         with patch.object(self.agent.requests, 'get', return_value=response), \

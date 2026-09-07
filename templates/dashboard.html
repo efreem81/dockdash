@@ -250,7 +250,7 @@
                     <span class="detail-value">⏱️ {{ container.uptime_human }}</span>
                 </div>
                 {% endif %}
-                {% if container.restart_count > 0 %}
+                {% if container.restart_count|default(0) > 0 %}
                 <div class="detail-row">
                     <span class="detail-label">Restarts:</span>
                     <span class="detail-value restart-count">🔁 {{ container.restart_count }}</span>

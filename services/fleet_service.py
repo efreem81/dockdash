@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from urllib.parse import urlparse
 
 from flask import request, session
 
@@ -64,6 +65,55 @@ def mark_failure(endpoint, error):
     db.session.commit()
 
 
+def normalize_container(endpoint, container):
+    """Return the stable container schema consumed by dashboard and API clients."""
+    item = dict(container or {})
+    defaults = {
+        'full_id': item.get('id'),
+        'image_id': None,
+        'image_digest': None,
+        'image_created': None,
+        'image_age': None,
+        'started_at': None,
+        'uptime_seconds': None,
+        'uptime_human': None,
+        'restart_count': 0,
+        'health_status': None,
+        'exit_code': None,
+        'compose_project': '',
+        'compose_service': '',
+        'ports': [],
+        'urls': [],
+        'env_vars': {},
+        'mounts': [],
+        'networks': [],
+        'labels': {},
+    }
+    for key, value in defaults.items():
+        if item.get(key) is None:
+            item[key] = value
+
+    endpoint_host = endpoint.public_ip
+    if not endpoint_host and endpoint.kind == 'agent':
+        endpoint_host = urlparse(endpoint.url or '').hostname
+    if not endpoint_host:
+        endpoint_host = docker_service.get_host_ip()
+    url_host = f'[{endpoint_host}]' if ':' in endpoint_host else endpoint_host
+
+    ports = []
+    urls = []
+    for source in item['ports']:
+        port = dict(source or {})
+        host_port = port.get('host_port')
+        if host_port:
+            port['url'] = f'http://{url_host}:{host_port}'
+            urls.append(port['url'])
+        ports.append(port)
+    item['ports'] = ports
+    item['urls'] = urls
+    return item
+
+
 def endpoint_health(endpoint):
     try:
         if endpoint.kind == 'local':
@@ -92,17 +142,21 @@ def endpoint_health(endpoint):
 
 def list_containers(endpoint, show_all=False):
     if endpoint.kind == 'local':
-        return docker_service.get_all_containers(show_all=show_all)
-    payload = _agent(endpoint).get('/v1/containers', params={'all': '1' if show_all else '0'})
-    mark_success(endpoint)
-    return payload.get('containers', [])
+        containers = docker_service.get_all_containers(show_all=show_all)
+    else:
+        payload = _agent(endpoint).get('/v1/containers', params={'all': '1' if show_all else '0'})
+        mark_success(endpoint)
+        containers = payload.get('containers', [])
+    return [normalize_container(endpoint, container) for container in containers]
 
 
 def container_detail(endpoint, container_id):
     if endpoint.kind == 'local':
         client = docker_service.get_docker_client()
-        return docker_service.get_container_info(client.containers.get(container_id))
-    return _agent(endpoint).get(f'/v1/containers/{container_id}').get('container')
+        container = docker_service.get_container_info(client.containers.get(container_id))
+    else:
+        container = _agent(endpoint).get(f'/v1/containers/{container_id}').get('container')
+    return normalize_container(endpoint, container)
 
 
 def container_stats(endpoint, container_id):

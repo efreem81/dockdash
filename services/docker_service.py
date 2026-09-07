@@ -111,7 +111,7 @@ def get_container_info(container):
         'started_at': started_at[:19].replace('T', ' ') if started_at else None,
         'uptime_seconds': uptime,
         'uptime_human': _format_uptime(uptime) if uptime else None,
-        'restart_count': state.get('RestartCount', 0),
+        'restart_count': attrs.get('RestartCount', state.get('RestartCount', 0)),
         'health_status': health_status,
         'exit_code': state.get('ExitCode'),
         'compose_project': compose_project,

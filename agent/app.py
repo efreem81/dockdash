@@ -106,12 +106,15 @@ def container_info(container):
         })
     return {
         'id': container.id,
+        'full_id': container.id,
         'short_id': container.short_id,
         'name': container.name,
         'image': image_name,
         'image_id': container.image.id if container.image else None,
         'status': container.status,
         'health_status': (state.get('Health') or {}).get('Status'),
+        'restart_count': attrs.get('RestartCount', state.get('RestartCount', 0)),
+        'exit_code': state.get('ExitCode'),
         'created': attrs.get('Created'),
         'ports': ports,
         'labels': safe_labels,
