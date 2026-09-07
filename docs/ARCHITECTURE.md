@@ -68,6 +68,12 @@ the owning agent and compare that host's local digest with the allowlisted
 registry. Trivy runs on the owning agent against the immutable local image ID,
 not an arbitrary registry target.
 
+Container inventory is annotated with its adopted Compose project, service, and
+endpoint-specific capabilities. The UI uses that server-provided contract to
+avoid presenting local-only exec/recreate controls on agents, hides deletion
+for Compose-owned containers, and routes safe updates through the owning
+project.
+
 Container operations are immediate. Compose project mutations are queued:
 
 ```text
@@ -79,6 +85,7 @@ UI or CLI request
   -> agent validates and runs an allowlisted Compose action
   -> optional application health check
   -> capture after state and deployment revision
+  -> for update workflows, refresh registry and vulnerability evidence
   -> persist succeeded or failed result
 ```
 

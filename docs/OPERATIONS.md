@@ -142,11 +142,12 @@ Review discoveries before running actions. A discovered directory is not proof
 that its data mounts, dependencies, or application endpoint are healthy.
 
 After an agent upgrade, select that host in the dashboard and verify both
-**Updates** and **Security**. Update checks must return per-image results rather
-than redirecting the operator to Projects. Security must report the agent's
-Trivy scanner and complete a representative local-image scan. Use Projects for
-the actual pull/deploy operation so the owning Compose definition and health
-checks remain authoritative.
+**Updates** and **Security**. Update checks must return per-image results, and a
+container detail or vulnerability result for an adopted running service must
+offer a targeted update. Security must report the agent's Trivy scanner and
+complete a representative local-image scan. DockDash queues the actual update
+through the owning Compose project so its definition and health checks remain
+authoritative, then refreshes both update and vulnerability evidence.
 
 Use **All Hosts** for consolidated inventory. It is intentionally read-only:
 open the owning host from a card or row before running lifecycle actions. An
@@ -177,6 +178,7 @@ required mounts, and Compose configuration without changing the workload.
 | Pull | Pull images for selected services |
 | Up | Pull, run `up -d --wait`, then run the application check |
 | Recreate | Pull, force-recreate, wait, then run the application check |
+| Update | Recreate the selected/currently running services, then repeat registry and vulnerability checks |
 | Logs | Return bounded Compose logs |
 | Scale | Apply bounded service replicas and wait for health |
 | Down | Remove project containers/networks and orphans, never volumes |
@@ -184,6 +186,13 @@ required mounts, and Compose configuration without changing the workload.
 If no services are selected, start-like actions derive only currently running
 services. This prevents an operation from silently starting intentionally
 stopped services.
+
+The dashboard exposes the same update workflow from container details,
+vulnerability findings, Compose group controls, bulk selection, and **Update
+All**. A stopped service links to its owning project rather than starting it as
+a side effect. A standalone remote container must be adopted into Compose
+before DockDash offers automated recreation; this preserves the intentionally
+narrow agent API.
 
 Watch the durable job record until it reaches `succeeded` or `failed`. Read the
 captured output and post-action health result; do not treat a submitted or

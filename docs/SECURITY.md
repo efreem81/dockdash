@@ -139,6 +139,11 @@ mutations with an OS lock, persists jobs before execution, recovers interrupted
 `running` jobs to the queue, and marks malformed jobs failed without stalling
 later work.
 
+The controller's `update` workflow does not widen the agent API. It translates
+to the existing allowlisted Compose recreate operation for selected services,
+then invokes the existing bounded registry and Trivy operations. Remote exec
+and arbitrary Docker API access remain unavailable.
+
 ### Deployment data
 
 Adopted Compose files remain on their owning hosts and are mounted read-only.

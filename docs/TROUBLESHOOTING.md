@@ -177,6 +177,30 @@ If a project URL returns 404, confirm that the project belongs to the selected
 endpoint. Project IDs are scoped by endpoint even if another host has a project
 with the same name.
 
+## A vulnerable container cannot be updated
+
+Open the container detail or its vulnerability badge. An adopted, running
+Compose service offers **Pull, redeploy & rescan**. DockDash queues a durable
+project job and reports deployment, health-check, registry-check, and rescan
+failures through that job.
+
+If the UI offers **Adopt into Compose**, the container is standalone or its
+Compose project has not been discovered. Use **Compose Projects → Discover /
+adopt** and verify that the project directory is within the agent's allowlisted
+roots. DockDash intentionally does not reconstruct standalone remote containers
+from Docker inspect data.
+
+If findings remain after a successful update, inspect whether the registry
+published a newer digest for the current tag. A package may have a published
+fix while the selected image tag still contains the vulnerable package; change
+the image tag in the owning Compose definition when appropriate and deploy the
+project again.
+
+If **Scan Now** fails, confirm the selected endpoint reports Trivy as available
+under **Security**. Container-detail scanning resolves and scans the image on
+the owning agent; it does not scan through the controller or accept a remote
+filesystem target.
+
 ## Project discovery misses a Compose project
 
 On the owning host, inspect the running container labels:

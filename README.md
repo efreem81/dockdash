@@ -21,6 +21,10 @@ management are not current goals.
   directories, then adopted without rewriting them.
 - Compose validate, start, stop, restart, pull, up, recreate, logs, scale, and
   down without volume deletion.
+- Compose-aware remediation from container details, security findings, project
+  groups, selected containers, or all known updates. The update workflow pulls
+  current tags, redeploys only the intended running services, verifies health,
+  and refreshes update and vulnerability evidence.
 - New DockDash-managed Compose definitions and Git-backed deployments.
 - Required-mount, free-capacity, Compose, Docker health, and optional HTTP
   application checks.
@@ -44,6 +48,8 @@ DockDash does not currently provide:
 - RBAC, teams, or multi-tenant isolation;
 - Kubernetes or Swarm orchestration;
 - arbitrary remote shell or remote container exec;
+- automatic recreation of standalone remote containers (adopt them into
+  Compose first);
 - automatic application-data rollback;
 - volume-destructive Compose teardown; or
 - controller high availability or horizontal scaling.
