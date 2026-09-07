@@ -1,439 +1,297 @@
-# ⛵ DockDash
+# DockDash
 
-**Smooth sailing for your containers!**
+DockDash is a self-hosted Docker fleet and Compose management application. It
+provides the multi-host inventory, container lifecycle, project orchestration,
+and deployment workflow needed by this project without a node-based commercial
+license gate.
 
-A sleek, feature-rich container management dashboard with a nautical theme. Works with both **Docker** and **Podman**! Monitor containers, manage images, receive alerts via webhooks, scan for vulnerabilities, and more.
+The intended operator is a trusted administrator. RBAC, Kubernetes, and Swarm
+management are not current goals.
 
-![Docker](https://img.shields.io/badge/Docker-ready-blue?logo=docker)
-![Python](https://img.shields.io/badge/Python-3.11-green?logo=python)
-![Flask](https://img.shields.io/badge/Flask-3.0-lightgrey?logo=flask)
+## What it manages
 
-## ✨ Features
+- Multiple standalone Docker hosts through certificate-authenticated agents.
+- Container inventory, details, stats, logs, start, stop, restart, removal, and
+  local-only exec.
+- Image inventory, pull, deletion, update checks, dangling-image and unused-volume
+  cleanup, and Trivy scanning.
+- Existing Compose projects discovered from Docker labels and allowlisted host
+  directories, then adopted without rewriting them.
+- Compose validate, start, stop, restart, pull, up, recreate, logs, scale, and
+  down without volume deletion.
+- New DockDash-managed Compose definitions and Git-backed deployments.
+- Required-mount, free-capacity, Compose, Docker health, and optional HTTP
+  application checks.
+- Durable serialized jobs with before/after image state and deployment revision
+  evidence.
+- Webhook monitoring, shared service links, and a responsive web UI.
 
-### Container Management
-- **📊 Dashboard**: View all containers with status, search, sort, and pagination
-- **🎮 Container Control**: Start, stop, restart, and remove containers
-- **🔃 Recreate Containers**: Pull latest image and recreate with same config
-- **📜 Logs Viewer**: Real-time container logs with tail and auto-follow
-- **💻 Execute Commands**: Run commands inside containers (exec)
-- **🔍 Inspect Details**: View environment variables, mounts, networks, and labels
-- **📈 Live Stats**: Real-time CPU and memory usage per container
-- **💚 Health Checks**: Visual health status indicators for containers with health checks
-- **📦 Compose Grouping**: Containers grouped by Docker Compose project
+Remote agents do not expose the Docker Engine API. They expose a deliberately
+narrow HTTPS API and require mutual TLS. Plain HTTP and certificate-less access
+are not supported.
 
-### Docker Fleet & Compose Deployments
-- **🖥️ Multi-host Docker**: Manage unlimited Docker hosts through mTLS-authenticated DockDash agents
-- **📦 Compose Orchestration**: Discover and adopt existing Compose projects from their owning directories
-- **🚀 Safe Deployments**: Validate, pull, deploy, start, stop, restart, and scale Compose projects
-- **🧭 Deployment Sources**: Adopt host projects or create Git-backed and DockDash-managed deployments
-- **🩺 Deployment Checks**: Required-mount, capacity, Docker health, and optional HTTP application checks
-- **🕰️ Revision Evidence**: Record configuration digests, image IDs, and durable operation history for rollback assistance
+## Scope and limitations
 
-### Image Management
-- **⬆️ Update Checking**: Check if container images have updates available
-- **🧹 Cleanup Tools**: Remove dangling images, unused images, and stopped containers
-- **🛡️ Vulnerability Scanning**: Scan images for CVEs using Trivy (optional)
+DockDash is Docker-first. Local Podman socket compatibility may continue to work
+through the Docker SDK compatibility layer, but the fleet agent, Compose
+orchestration, deployment validation, and release gate target Docker Engine and
+Docker Compose v2.
 
-### Monitoring & Alerts
-- **📡 Background Monitoring**: Automatic container state and resource monitoring
-- **🔔 Webhook Notifications**: Alerts via Discord, Slack, Telegram, or custom webhooks
-- **⚠️ Threshold Alerts**: Get notified when CPU/memory exceeds thresholds
-- **🚨 State Change Alerts**: Notifications for container start/stop/health changes
+DockDash does not currently provide:
 
-### Networking & Access
-- **🔗 Smart Links**: Auto-detects HTTP vs HTTPS for exposed ports
-- **🌐 LAN Accessible**: Access from any device on your network
-- **📱 Responsive Design**: Works on desktop, tablet, and mobile
+- RBAC, teams, or multi-tenant isolation;
+- Kubernetes or Swarm orchestration;
+- arbitrary remote shell or remote container exec;
+- automatic application-data rollback;
+- volume-destructive Compose teardown; or
+- controller high availability or horizontal scaling.
 
-### Security & Sharing
-- **🔐 Secure Login**: Password-protected access with CSRF protection
-- **🔗 URL Share**: Shared bookmark system for team URLs and services
-- **🍪 Secure Cookies**: Configurable session security for LAN or HTTPS
+Unused-volume prune is available and affects every unused volume on the selected
+endpoint. Treat it as a destructive host-wide action; it is not a routine
+troubleshooting step.
 
-## 🚀 Quick Start
+An administrator and every DockDash component with Docker socket access are
+effectively root-equivalent on the managed host. Read the
+[security model](docs/SECURITY.md) before deployment.
+
+## Architecture
+
+```text
+Browser -- HTTPS --> DockDash controller/UI -- mTLS --> host agent -- Docker socket
+                         |                                |
+                         +-- SQLite                       +-- Docker Compose v2
+                         +-- single durable worker        +-- allowlisted host paths
+```
+
+The controller-host agent has no published port and shares a private Docker
+bridge with the controller worker. Remote agents bind TCP/9002 to an exact
+management address, and host forwarding policy must allow that port only from
+the controller.
+
+See [Docker fleet architecture](docs/ARCHITECTURE.md) for endpoint scoping,
+project sources, job flow, preflight checks, and revision behavior.
+
+## Quick start
 
 ### Prerequisites
 
-- Docker and Docker Compose (or Podman and podman-compose) installed on your host
+- Docker Engine
+- Docker Compose v2
+- OpenSSL for fleet certificate enrollment
+- `pre-commit` for the complete release gate
 
-### Installation
-
-1. **Clone the repository**
-   ```bash
-   git clone git@github.com:efreem81/dockdash.git
-   cd dockdash
-   ```
-
-2. **Start DockDash**
-   ```bash
-   ./deploy.sh
-   ```
-
-   Helpful options:
-   ```bash
-   ./deploy.sh --quick   # restart without rebuilding
-   ./deploy.sh --logs    # show recent logs after starting
-   ```
-
-3. **Access the Web UI**
-
-   Open your browser and navigate to:
-   ```
-   http://localhost:9999
-   ```
-
-   Or from another device on your network:
-   ```
-   http://<host-ip>:9999
-   ```
-
-4. **Login**
-
-   Set a unique `DEFAULT_PASSWORD` in `.env` before the first deployment. The
-   deployment script refuses blank and known default passwords. The initial
-   username defaults to `admin`.
-
-### Using with Podman
-
-DockDash works with Podman! For **rootless Podman**:
+### Start the controller
 
 ```bash
-# Edit docker-compose.yml to use Podman socket
-sed -i 's|/var/run/docker.sock|/run/user/1000/podman/podman.sock|' docker-compose.yml
-
-# Start with podman-compose
-podman-compose up -d
+git clone git@github.com:efreem81/dockdash.git
+cd dockdash
+cp .env.example .env
 ```
 
-For **rootful Podman**, enable the Docker-compatible socket:
-
-```bash
-sudo systemctl enable --now podman.socket
-# Then use docker-compose as normal
-```
-
-## ⚙️ Configuration
-
-### Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SECRET_KEY` | required/generated | Flask secret key for sessions |
-| `DEFAULT_USERNAME` | `admin` | Default admin username |
-| `DEFAULT_PASSWORD` | required | Initial admin password; blank and known defaults are rejected |
-| `DOCKDASH_PORT` | `9999` | Host port to expose DockDash on |
-| `HOST_IP` | (auto-detected) | LAN IP used for container link generation |
-| `DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker/Podman socket path |
-| `SESSION_COOKIE_SECURE` | `0` | Set to `1` when running behind HTTPS |
-| `SESSION_LIFETIME_HOURS` | `12` | Session lifetime in hours |
-| `AUTO_START_MONITORING` | `0` | Set to `1` to auto-start background monitoring |
-
-### Custom Configuration
-
-Create a `.env` file in the project root:
+Edit `.env` and set at minimum:
 
 ```env
-SECRET_KEY=your-super-secret-key-here
+SECRET_KEY=generate-a-random-64-hex-character-value
 DEFAULT_USERNAME=admin
-DEFAULT_PASSWORD=your-secure-password
+DEFAULT_PASSWORD=choose-a-unique-initial-password
 DOCKDASH_PORT=9999
 HOST_IP=192.168.1.50
-AUTO_START_MONITORING=1
-# If behind HTTPS (reverse proxy), enable secure cookies
-# SESSION_COOKIE_SECURE=1
 ```
 
-### Secure Docker fleet setup
-
-Fleet agents are separate from the web controller. They never expose the
-Docker socket directly and accept only mutually authenticated TLS connections.
-Private keys and certificates are ignored by Git and must remain outside the
-repository.
-
-1. Create the private controller bridge and controller CA/client identity:
-
-   ```bash
-   docker network create dockdash-control
-   sudo install -d -m 0700 /etc/dockdash-pki
-   sudo agent/scripts/create-ca-controller.sh /etc/dockdash-pki
-   install -d -m 0700 data/pki
-   sudo install -m 0444 /etc/dockdash-pki/ca.crt data/pki/ca.crt
-   sudo install -m 0444 /etc/dockdash-pki/controller.crt data/pki/controller.crt
-   sudo install -m 0400 /etc/dockdash-pki/controller.key data/pki/controller.key
-   ```
-
-   Keep `/etc/dockdash-pki/ca.key` root-only and offline except while signing
-   or rotating certificates. Never copy it to an agent.
-
-2. On each agent host, generate its private key and CSR locally:
-
-   ```bash
-   sudo install -d -m 0700 /etc/dockdash-agent
-   sudo agent/scripts/create-server-csr.sh /etc/dockdash-agent HOSTNAME
-   ```
-
-3. Transfer only `server.csr` to the CA host, review its subject, and sign it
-   with the host's exact management IP or DNS name:
-
-   ```bash
-   sudo agent/scripts/sign-server-csr.sh /etc/dockdash-pki server.csr server.crt IP:192.0.2.10
-   ```
-
-   Return only `server.crt` and `ca.crt` to `/etc/dockdash-agent`. The agent's
-   `server.key` never leaves that host. Verify `sslserver` and `sslclient`
-   purposes with `openssl verify` before deployment.
-
-4. Deploy `agent/compose.controller.yaml` on the controller host or
-   `agent/compose.yaml`/`agent/compose.opt-only.yaml` on a remote host. Remote
-   deployments require `DOCKDASH_AGENT_BIND` to be the exact management IP.
-
-5. Before exposing TCP/9002, add a persistent host-forwarding rule that permits
-   only the DockDash controller address, followed by a drop for other sources.
-   Docker-published ports traverse `DOCKER-USER`, not the normal INPUT/UFW
-   policy. Preserve `RELATED,ESTABLISHED` traffic before the drop, verify from
-   both an allowed and denied source, and confirm container egress afterward.
-
-6. Add the endpoint in **Fleet**, test it, and run **Discover / adopt**. The
-   certificate SAN must match the URL exactly. Plain HTTP, URL credentials and
-   redirect-based fallback are rejected.
-
-Certificates are issued for 397 days by the included scripts. Rotate them
-before expiry by generating a new local key/CSR and deploying the signed leaf
-certificate during a controlled agent restart. Revocation is performed by
-removing trust or issuing a replacement CA/controller identity; the agent does
-not use an online CRL or OCSP responder. Back up the CA and controller identity
-encrypted and separately from the managed hosts.
-
-The `dockdash-worker` service serializes Compose mutations, rejects an accidental
-second worker through a shared OS lock, and recovers an interrupted `running` job
-back into the queue after restart.
-
-### Vulnerability Scanning
-
-DockDash bundles a commit-pinned Trivy binary in its controller image. Access
-image scanning through **Settings → Vulnerability Scanning**.
-
-## 📖 Usage
-
-### Dashboard
-
-The dashboard displays all Docker containers on the host:
-
-| Badge | Meaning |
-|-------|---------|
-| 🟢 **running** | Container is running |
-| 🔴 **exited** | Container has stopped |
-| 💚 | Health check: healthy |
-| ❤️ | Health check: unhealthy |
-| ⬆️ | Image update available |
-
-**Container Actions:**
-| Button | Action |
-|--------|--------|
-| 🔄 | Restart container |
-| ⏹️ | Stop container |
-| ▶️ | Start container |
-| 🗑️ | Remove container |
-| 📊 | Toggle live stats |
-| 💻 | Execute command |
-| 📜 | View logs |
-| 🔍 | Inspect details |
-| 🔃 | Recreate (pull latest & restart) |
-
-### Settings
-
-Access **Settings** from the navigation to configure:
-
-- **🔔 Webhooks**: Add Discord, Slack, Telegram, or custom webhook notifications
-- **📡 Monitoring**: Start/stop background container monitoring
-- **🛡️ Vulnerability Scanner**: Scan images for security vulnerabilities
-- **🧹 Cleanup**: Remove unused images and stopped containers
-- **🔑 Password**: Change your login password
-
-### URL Share
-
-A shared bookmark system for your team:
-
-1. Click **"URL Share"** in the navigation
-2. Click **"Add URL"** to add a new bookmark
-3. Organize URLs by category
-4. Access shared URLs from any device
-
-## 🔒 Security Considerations
-
-1. **Change default credentials immediately** after first login
-2. **Use a strong SECRET_KEY** in production
-3. **Limit network access** - only expose to trusted networks
-4. Consider placing behind a **reverse proxy with HTTPS**
-5. Set `SESSION_COOKIE_SECURE=1` when using HTTPS
-
-DockDash includes CSRF protection and secure cookie defaults.
-
-## 🏗️ Architecture
-
-DockDash uses a modular Flask architecture with blueprints:
-
-```
-dockdash/
-├── app.py                  # Application entry point
-├── config.py               # App factory and configuration
-├── models.py               # SQLAlchemy database models
-├── Dockerfile
-├── docker-compose.yml
-├── deploy.sh
-├── requirements.txt
-│
-├── routes/                 # Flask blueprints (API endpoints)
-│   ├── auth.py             # Authentication routes
-│   ├── dashboard.py        # Dashboard views
-│   ├── containers.py       # Container management API
-│   ├── images.py           # Image management API
-│   ├── urls.py             # URL sharing routes
-│   ├── notifications.py    # Webhook management API
-│   ├── monitoring.py       # Background monitoring API
-│   └── vulnerabilities.py  # Vulnerability scanning API
-│
-├── services/               # Business logic layer
-│   ├── docker_service.py   # Docker SDK operations
-│   ├── image_service.py    # Image management logic
-│   ├── lifecycle_service.py # Container recreate logic
-│   ├── notification_service.py # Webhook sending
-│   ├── scheduler_service.py # Background monitoring
-│   └── vulnerability_service.py # Trivy integration
-│
-├── templates/              # Jinja2 HTML templates
-│   ├── base.html
-│   ├── login.html
-│   ├── dashboard.html
-│   ├── settings.html
-│   ├── urls.html
-│   ├── add_url.html
-│   ├── edit_url.html
-│   └── change_password.html
-│
-└── static/
-    ├── logo.svg
-    ├── css/
-    │   └── style.css
-    └── js/
-        ├── app.js          # Shared utilities
-        ├── dashboard.js    # Dashboard functionality
-        └── settings.js     # Settings page functionality
-```
-
-## 🛠️ Development
-
-### Run Locally (without Docker)
+Generate `SECRET_KEY` with:
 
 ```bash
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Required on first startup; never use these example values in production.
-export SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
-export DEFAULT_PASSWORD="choose-a-unique-password"
-
-# Initialize database
-python init_db.py
-
-# Run the application
-python app.py
+python -c 'import secrets; print(secrets.token_hex(32))'
 ```
 
-### Build Docker Image
+Then deploy:
 
 ```bash
-docker build -t dockdash .
+./deploy.sh
+curl --fail http://127.0.0.1:9999/health
 ```
 
-### Run with Docker
+`deploy.sh` creates the private `dockdash-control` network when needed, refuses
+blank/known default passwords, protects `.env`, builds the images, and starts
+the controller and worker. `./deploy.sh --quick` skips the rebuild and should be
+used only when the existing image is intentionally retained.
+
+The initial password is used only if the database has no user. Change it after
+first login. Put the UI behind an HTTPS reverse proxy for production and set:
+
+```env
+SESSION_COOKIE_SECURE=1
+REMEMBER_COOKIE_SECURE=1
+```
+
+Do not publish TCP/9999 directly to the internet.
+
+## Secure fleet setup
+
+### 1. Create the CA and controller identity
+
+On the CA/controller host:
 
 ```bash
-docker run -d \
-  --name dockdash \
-  -p 9999:5000 \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v dockdash-data:/app/data \
-  dockdash
+docker network create dockdash-control
+sudo install -d -m 0700 /etc/dockdash-pki
+sudo agent/scripts/create-ca-controller.sh /etc/dockdash-pki
+install -d -m 0700 data/pki
+sudo install -m 0444 /etc/dockdash-pki/ca.crt data/pki/ca.crt
+sudo install -m 0444 /etc/dockdash-pki/controller.crt data/pki/controller.crt
+sudo install -m 0400 /etc/dockdash-pki/controller.key data/pki/controller.key
 ```
 
-## 📝 API Endpoints
+Keep `/etc/dockdash-pki/ca.key` root-only and offline except while signing or
+rotating certificates. Never copy it to an agent.
 
-### Containers
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/containers` | List all containers |
-| GET | `/api/container/<id>` | Get container details |
-| GET | `/api/container/<id>/stats` | Get container stats |
-| GET | `/api/container/<id>/logs` | Fetch container logs |
-| POST | `/api/container/<id>/start` | Start a container |
-| POST | `/api/container/<id>/stop` | Stop a container |
-| POST | `/api/container/<id>/restart` | Restart a container |
-| POST | `/api/container/<id>/remove` | Remove a container |
-| POST | `/api/container/<id>/exec` | Execute command |
-| POST | `/api/container/<id>/recreate` | Recreate container |
+### 2. Create each agent identity
 
-### Images
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/images` | List all images |
-| GET | `/api/image/check-update` | Check single image for updates |
-| POST | `/api/images/check-updates` | Batch check for updates |
-| POST | `/api/images/cleanup` | Clean up images |
-| POST | `/api/containers/prune` | Prune stopped containers |
+Generate the private key and CSR on the agent host:
 
-### Webhooks & Monitoring
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/webhooks` | List webhooks |
-| POST | `/api/webhook` | Create webhook |
-| PUT | `/api/webhook/<id>` | Update webhook |
-| DELETE | `/api/webhook/<id>` | Delete webhook |
-| POST | `/api/webhook/<id>/test` | Test webhook |
-| GET | `/api/monitoring/status` | Get monitoring status |
-| POST | `/api/monitoring/start` | Start monitoring |
-| POST | `/api/monitoring/stop` | Stop monitoring |
+```bash
+sudo install -d -m 0700 /etc/dockdash-agent
+sudo agent/scripts/create-server-csr.sh /etc/dockdash-agent HOSTNAME
+```
 
-### Vulnerability Scanning
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/vulnerabilities/status` | Check Trivy availability |
-| GET | `/api/vulnerabilities/scan?image=<ref>` | Scan single image |
-| POST | `/api/vulnerabilities/scan` | Batch scan images |
+Transfer only the CSR to the CA host. Review and sign it with the exact IP or DNS
+name the controller will use:
 
-### Other
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/link/probe` | Probe HTTP/HTTPS for host:port |
-| GET | `/api/urls` | List shared URLs |
-| GET | `/health` | Health check endpoint |
+```bash
+sudo agent/scripts/sign-server-csr.sh \
+  /etc/dockdash-pki server.csr server.crt IP:192.0.2.10
+```
 
-## 🤝 Contributing
+Return only `server.crt` and `ca.crt` to the agent. The agent's `server.key`
+never leaves that host.
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+### 3. Deploy the agent
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+Use:
 
-## 📄 License
+- `agent/compose.controller.yaml` on the controller host;
+- `agent/compose.yaml` where adopted Compose roots are needed; or
+- `agent/compose.opt-only.yaml` for managed `/opt` deployments only.
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Remote deployments require `DOCKDASH_AGENT_BIND` to be the exact management IP:
 
-## 🙏 Acknowledgments
+```bash
+DOCKDASH_AGENT_BIND=192.0.2.10 \
+  docker compose -f agent/compose.yaml config --quiet
+DOCKDASH_AGENT_BIND=192.0.2.10 \
+  docker compose -f agent/compose.yaml up -d --build
+```
 
-- [Flask](https://flask.palletsprojects.com/) - Web framework
-- [Docker SDK for Python](https://docker-py.readthedocs.io/) - Docker API integration
-- [Flask-Login](https://flask-login.readthedocs.io/) - User session management
-- [Trivy](https://trivy.dev/) - Vulnerability scanner
-- [SQLAlchemy](https://www.sqlalchemy.org/) - Database ORM
+Before opening TCP/9002, install a persistent `DOCKER-USER` or equivalent
+forwarding rule that allows only the controller and rejects other sources.
 
----
+### 4. Accept and register the host
 
-⛵ **DockDash** - Smooth sailing for your containers!
+Verify the certificate chain/SAN, an authorized mTLS request, a failed request
+without a client certificate, a denied request from another host, and the
+read-only/capability-dropped agent runtime. In the UI, add the exact HTTPS URL in
+**Fleet**, test it, select it, and use **Projects → Discover / adopt**.
+
+Certificates created by the supplied scripts are valid for 397 days. Monitor
+expiry and rotate them before that date. See the [operations
+runbook](docs/OPERATIONS.md) for the complete procedure.
+
+## Operating projects
+
+Discovery records projects from Compose labels first and scans configured roots
+for stopped projects. It excludes backup and archive trees. Adoption does not
+rewrite existing definitions.
+
+Before changing a project:
+
+1. Select the exact endpoint.
+2. Configure required storage mountpoints and an application health URL when
+   appropriate.
+3. Run **Validate**.
+4. Submit the narrow lifecycle/deployment action.
+5. Wait for the durable job to report `succeeded` or `failed`.
+6. Review output, application health, and revision image IDs.
+
+The worker serializes mutations and recovers interrupted jobs after restart.
+Start-like actions avoid silently starting intentionally stopped services when
+no service list is supplied.
+
+## Configuration
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `SECRET_KEY` | required | Flask session signing key |
+| `DEFAULT_USERNAME` | `admin` | Initial username when no user exists |
+| `DEFAULT_PASSWORD` | required for first user | Unique initial password |
+| `DOCKDASH_PORT` | `9999` | Controller host port |
+| `HOST_IP` | auto-detected by deploy script | Address used for local container links |
+| `SESSION_COOKIE_SECURE` | `0` | Require HTTPS for session cookie |
+| `REMEMBER_COOKIE_SECURE` | `0` | Require HTTPS for remember cookie |
+| `SESSION_LIFETIME_HOURS` | `12` | Session lifetime |
+| `AUTO_START_MONITORING` | `0` | Start background monitoring at controller startup |
+| `DOCKDASH_AGENT_CA` | `/app/data/pki/ca.crt` | Controller agent CA bundle |
+| `DOCKDASH_AGENT_CERT` | `/app/data/pki/controller.crt` | Controller client certificate |
+| `DOCKDASH_AGENT_KEY` | `/app/data/pki/controller.key` | Controller client key |
+| `DOCKDASH_AGENT_TIMEOUT` | `30` | Default agent request timeout in seconds |
+
+Agent variables:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `DOCKDASH_AGENT_BIND` | none; remote deployment fails | Exact remote management bind address |
+| `DOCKDASH_COMPOSE_ROOTS` | definition-specific | Allowed resolved project/config roots |
+| `DOCKDASH_SCAN_ROOTS` | Compose roots | Roots scanned for stopped projects |
+| `DOCKDASH_MANAGED_ROOT` | `/opt/dockdash-managed` | Writable managed/Git project root |
+| `DOCKDASH_AGENT_MIN_FREE_BYTES` | `1073741824` | Minimum free bytes for preflight |
+| `DOCKDASH_AGENT_MAX_OUTPUT` | `50000` | Maximum returned command-output characters |
+
+## Administrative CLI
+
+Run the CLI inside the controller container so it uses the same database and
+PKI paths:
+
+```bash
+docker compose exec dockdash python dockdash_cli.py endpoint-list
+docker compose exec dockdash python dockdash_cli.py endpoint-test --name HOST
+docker compose exec dockdash python dockdash_cli.py project-sync --endpoint HOST
+docker compose exec dockdash python dockdash_cli.py project-validate \
+  --endpoint HOST --project PROJECT
+docker compose exec dockdash python dockdash_cli.py project-action \
+  --endpoint HOST --project PROJECT --action restart
+```
+
+## Development and validation
+
+Create a virtual environment for local work:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python -m pip install -r agent/requirements.txt
+```
+
+Run the complete repository gate before committing:
+
+```bash
+pre-commit run --all-files
+```
+
+The gate checks repository hygiene and private keys, YAML, Python lint and
+security, controller and agent dependency vulnerabilities, shell scripts, the
+controller/agent regression suite, JavaScript syntax, all Compose definitions,
+clean controller/agent image builds, Trivy actionable High/Critical findings,
+and authorized/unauthorized/TLS-version/runtime mTLS behavior.
+
+## Documentation
+
+- [Docker fleet architecture](docs/ARCHITECTURE.md)
+- [Operations runbook](docs/OPERATIONS.md)
+- [Security model](docs/SECURITY.md)
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
+- [Agent deployment notes](agent/README.md)
+- [February 2026 assessment (historical)](docs/ASSESSMENT.md)
+
+## License
+
+DockDash is licensed under the [MIT License](LICENSE).

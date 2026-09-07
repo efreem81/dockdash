@@ -2,6 +2,11 @@
 
 The agent exposes a narrow Docker and Compose API over mutually authenticated TLS. It does not expose the Docker Engine API directly.
 
+This file summarizes the agent-specific contract. Use the repository
+[operations runbook](../docs/OPERATIONS.md) for enrollment, acceptance,
+certificate rotation, upgrade, rollback, and decommissioning, and the
+[security model](../docs/SECURITY.md) for the complete trust boundary.
+
 Required certificate files in `/etc/dockdash-agent`:
 
 - `ca.crt`
@@ -41,3 +46,14 @@ management IP and enforce a persistent `DOCKER-USER` or equivalent forwarding
 rule that allows only the DockDash controller. Validate both a permitted mTLS
 request and a rejected request from another source after every firewall or
 Docker restart.
+
+Before considering an agent accepted, also verify that a request without a
+client certificate fails, the endpoint URL matches the server certificate SAN,
+the certificate validates for `sslserver`, and the running container reports a
+read-only root filesystem, `cap_drop=["ALL"]`, and
+`no-new-privileges:true`. A healthy container state by itself does not prove
+that these controls are active.
+
+Build controller and agent images from the same reviewed Git revision. Record
+the deployed revision and image IDs separately from repository validation; a
+passing gate on `main` does not prove a host is running that artifact.

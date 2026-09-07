@@ -1,5 +1,13 @@
 # DockDash - Comprehensive Assessment Report
 
+> **Historical snapshot:** This report records the February 1, 2026 baseline
+> and is retained for decision history. It is not the current feature or
+> security status. Multi-host Docker agents, Compose discovery and deployment,
+> durable jobs, mTLS, startup hardening, and the current validation gate were
+> implemented in September 2026. Use the [README](../README.md),
+> [architecture](ARCHITECTURE.md), [security model](SECURITY.md), and
+> [operations runbook](OPERATIONS.md) for current behavior.
+
 **Date:** February 1, 2026
 **Version:** 1.0.0
 **Assessment Type:** Full Feature & Security Audit

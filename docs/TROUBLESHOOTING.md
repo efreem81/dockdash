@@ -1,493 +1,323 @@
-# DockDash Troubleshooting Guide
+# DockDash troubleshooting
 
-## Common Issues & Solutions
+Start with observation. Do not delete the database, remove volumes, recreate a
+workload, or weaken TLS to diagnose a failure.
 
-### Database Initialization Errors
+## First response
 
-#### Error: `sqlite3.OperationalError: unable to open database file`
-
-**Cause:** The `data/` directory doesn't exist or isn't writable when the application starts.
-
-**Solutions:**
-
-1. **Ensure the volume is properly mounted (docker compose)**
-   ```yaml
-   volumes:
-     - ./data:/app/data
-   ```
-
-2. **Rebuild the Docker image**
-   ```bash
-   docker compose down
-   docker compose build --no-cache
-   docker compose up
-   ```
-
-3. **Check volume permissions**
-   ```bash
-   docker volume ls
-   docker volume inspect dockdash_data
-   ```
-
-4. **Run database initialization manually**
-   ```bash
-   docker compose exec dockdash python init_db.py
-   ```
-
-5. **Verify the data directory exists**
-   ```bash
-   docker compose exec dockdash ls -la /app/data/
-   ```
-
-**Prevention:**
-- The Dockerfile now creates the `data/` directory automatically
-- The startup script (`init_db.py`) runs before Gunicorn starts and exits on any migration failure
-- Gunicorn and the worker validate the complete required schema before accepting work
-- The data directory is mode `0700`; SQLite database, WAL, and SHM files are mode `0600`
-
----
-
-### Connection Errors to Docker/Podman
-
-#### Error: `docker.errors.DockerException: Error while fetching server API version`
-
-**Cause:** The Docker/Podman socket isn't mounted or accessible.
-
-**Solutions:**
-
-**For Docker:**
-```yaml
-volumes:
-  - /var/run/docker.sock:/var/run/docker.sock
-```
-
-**For Podman (rootless):**
-```yaml
-volumes:
-  - /run/user/1000/podman/podman.sock:/var/run/docker.sock
-```
-
-**For Podman (rootful):**
-```yaml
-volumes:
-  - /run/podman/podman.sock:/var/run/docker.sock
-```
-
-**Verify the socket exists:**
-```bash
-# Docker
-ls -l /var/run/docker.sock
-
-# Podman (rootless)
-ls -l /run/user/1000/podman/podman.sock
-
-# Podman (rootful)
-ls -l /run/podman/podman.sock
-```
-
----
-
-### Login Issues
-
-#### Error: Invalid username or password
-
-**Default credentials:**
-```
-Username: admin
-Password: dockdash
-```
-
-**Reset default credentials:**
-
-Option 1: Delete the database and restart
-```bash
-docker volume rm dockdash_data
-docker compose down
-docker compose up
-```
-
-Option 2: Change environment variables
-```bash
-# In docker-compose.yml
-environment:
-  - DEFAULT_USERNAME=myuser
-  - DEFAULT_PASSWORD=mypassword
-```
-
-Then reset:
-```bash
-docker compose down
-docker compose up
-```
-
-Option 3: SQL query (advanced)
-```bash
-docker compose exec dockdash python -c "
-from app import app, db, User
-from werkzeug.security import generate_password_hash
-
-with app.app_context():
-    user = User.query.filter_by(username='admin').first()
-    if user:
-        user.password_hash = generate_password_hash('newpassword')
-        db.session.commit()
-        print('Password reset')
-    else:
-        print('User not found')
-"
-```
-
----
-
-### Container Management Issues
-
-#### Error: No containers showing up
-
-**Solutions:**
-
-1. **Verify Docker socket is mounted**
-   ```bash
-   docker compose exec dockdash python -c "
-   import docker
-   client = docker.from_env()
-   containers = client.containers.list()
-   print(f'Found {len(containers)} containers')
-   "
-   ```
-
-2. **Check if containers exist**
-   ```bash
-   docker ps -a
-   ```
-
-3. **Verify Docker daemon is running**
-   ```bash
-   docker ps
-   ```
-
-4. **Restart the container**
-   ```bash
-   docker compose restart dockdash
-   ```
-
----
-
-#### Error: Cannot connect to container ports
-
-**Cause:** One of the following:
-
-- The container does not publish a host port (no port mapping)
-- The service on that port is not HTTP(S) (DockDash will show it as non-clickable `tcp`)
-- The service is HTTP(S) but not reachable from the DockDash container/host (firewall, bind-address, or wrong `HOST_IP`)
-
-**Solutions:**
-
-1. **Confirm the container publishes a host port**
-```bash
-docker ps --format "table {{.Names}}\t{{.Ports}}"
-```
-
-DockDash detects ports from:
-- Container's exposed ports
-- Port bindings in docker-compose
-- Port mappings in docker run
-
-2. **Confirm the service is actually HTTP(S)**
-
-From the Docker host (or from inside the DockDash container), try:
+From the controller directory:
 
 ```bash
-curl -I http://<host-ip>:<port>
-curl -Ik https://<host-ip>:<port>
+git rev-parse HEAD
+docker compose ps
+docker compose images
+docker compose logs --tail=100 dockdash dockdash-worker
+curl --fail http://127.0.0.1:9999/health
+stat -c '%a %U:%G %n' data data/dockdash.db data/pki data/pki/controller.key
 ```
 
-If neither works, the port is not serving HTTP(S) (common for databases, SSH, MQTT, etc.).
+Expected controller state:
 
-3. **Verify `HOST_IP` is correct for LAN links**
+- `dockdash` is healthy and `/health` reports `status: ok`,
+  `database_ok: true`, and `docker_available: true`.
+- `dockdash-worker` is running. It intentionally has no container health check.
+- `data/` is mode `0700`, SQLite files are `0600`, the PKI directory is `0700`,
+  and the controller private key is `0400`.
+- The deployed image was built from the intended Git revision. Compare embedded
+  files or build metadata; a recent container start time is not enough.
 
-If links point to the wrong IP (or you recently changed networks), set `HOST_IP` in `.env` and redeploy.
+## Controller does not start
 
----
+### Missing `SECRET_KEY` or `DEFAULT_PASSWORD`
 
-### URL Sharing Issues
+The application deliberately fails closed without `SECRET_KEY`. It also requires
+`DEFAULT_PASSWORD` when the database contains no user. Set values in the
+root-only `.env` file and redeploy:
 
-#### URLs not saving
-
-**Solutions:**
-
-1. **Check database connectivity**
-   ```bash
-   docker compose logs dockdash | grep -i "database\|error"
-   ```
-
-2. **Verify database permissions**
-   ```bash
-   docker compose exec dockdash ls -la /app/data/dockdash.db
-   ```
-
-3. **Check free disk space**
-   ```bash
-   docker exec dockdash df -h /app/data
-   ```
-
-4. **Reset the database**
-   ```bash
-   docker volume rm dockdash_data
-   docker compose restart dockdash
-   ```
-
----
-
-### Performance Issues
-
-#### Application is slow or unresponsive
-
-**Solutions:**
-
-1. **Check container resources**
-   ```bash
-   docker stats dockdash
-   ```
-
-2. **Increase worker processes** (edit docker-compose.yml)
-   ```yaml
-   environment:
-     - WORKERS=4
-   ```
-   Then rebuild and restart.
-
-3. **Check logs for errors**
-   ```bash
-   docker compose logs -f dockdash
-   ```
-
-4. **Restart the container**
-   ```bash
-   docker compose restart dockdash
-   ```
-
-5. **Increase Docker resources**
-   - macOS/Windows: Docker Desktop > Preferences > Resources
-   - Linux: Check available system memory
-
----
-
-#### Many containers showing slow page load
-
-**Solution:** Enable caching headers in nginx or reverse proxy:
-```nginx
-location / {
-    proxy_pass http://dockdash:5000;
-    proxy_cache_valid 200 1m;  # Cache successful responses for 1 minute
-    proxy_cache_key "$scheme$request_method$host$request_uri";
-}
-```
-
----
-
-### Port Conflicts
-
-#### Error: Port 8080 already in use
-
-**Solution 1: Change the port** (docker-compose.yml)
-```yaml
-ports:
-  - "9000:5000"  # Use 9000 instead of 8080
-```
-
-**Solution 2: Find and stop the conflicting service**
 ```bash
-lsof -i :8080  # Find what's using port 8080
+chmod 600 .env
+docker compose config --quiet
+docker compose up -d --build
 ```
 
----
+Do not put real secrets in Compose files, Git, issue reports, or diagnostic
+output.
 
-### Docker Compose Issues
+### Database or migration error
 
-#### Error: Cannot connect to Docker daemon
+Read the complete startup error first:
 
-**Solution:**
 ```bash
-# Ensure Docker daemon is running
+docker compose logs --tail=200 dockdash
+df -h data
+df -i data
+stat -c '%a %U:%G %n' data data/dockdash.db 2>/dev/null
+```
+
+The startup path validates every required table and column. Do not bypass a
+migration failure or create an empty replacement database. Take a consistent
+backup, retain the failing database, and repair or restore it.
+
+To inspect schema health without printing application records:
+
+```bash
+docker compose exec dockdash python -c \
+  "from config import database_schema_errors; print(database_schema_errors())"
+```
+
+An empty list is expected.
+
+### `/health` returns 503
+
+The response identifies whether Docker or the database schema is unavailable.
+Check both the socket mount and schema; a running Gunicorn process is not enough.
+
+## Docker inventory is empty
+
+Confirm the intended endpoint is selected. Then test it in **Fleet**.
+
+For the controller container:
+
+```bash
+docker compose exec dockdash python -c \
+  "import docker; c=docker.from_env(); print(c.version()); print(len(c.containers.list(all=True)))"
+```
+
+For a remote endpoint, continue with the mTLS and network checks below. An
+offline or intentionally sleeping host should be recorded as such; do not start
+it merely to clear a dashboard error unless that power transition is intended.
+
+## Agent is unreachable
+
+Work through the layers in order.
+
+### 1. Container and bind address
+
+On the agent host:
+
+```bash
+docker compose ps
+docker compose logs --tail=100 dockdash-agent
+docker inspect dockdash-agent --format \
+  'readonly={{.HostConfig.ReadonlyRootfs}} caps={{json .HostConfig.CapDrop}} security={{json .HostConfig.SecurityOpt}} ports={{json .NetworkSettings.Ports}}'
+```
+
+A remote listener must bind the exact management IP. An error requiring
+`DOCKDASH_AGENT_BIND` is intentional; do not replace it with `0.0.0.0`.
+
+The controller-host agent has no published host port and is reachable by the
+worker through the `dockdash-control` network.
+
+### 2. Certificate chain, purpose, name, and time
+
+On the agent, inspect metadata only:
+
+```bash
+openssl verify -CAfile /etc/dockdash-agent/ca.crt \
+  -purpose sslserver /etc/dockdash-agent/server.crt
+openssl x509 -in /etc/dockdash-agent/server.crt \
+  -noout -subject -issuer -dates -ext subjectAltName -ext extendedKeyUsage
+```
+
+On the controller, verify the client certificate:
+
+```bash
+openssl verify -CAfile data/pki/ca.crt \
+  -purpose sslclient data/pki/controller.crt
+openssl x509 -in data/pki/controller.crt \
+  -noout -subject -issuer -dates -ext extendedKeyUsage
+```
+
+Common causes:
+
+- Endpoint URL does not exactly match an IP/DNS SAN.
+- Agent and controller use different CAs.
+- A server-only certificate was installed as the controller client identity.
+- Certificate is expired or not yet valid because a host clock is wrong.
+- A key does not match its certificate.
+
+Check a key/certificate match without displaying private material:
+
+```bash
+openssl x509 -in server.crt -pubkey -noout | sha256sum
+openssl pkey -in server.key -pubout | sha256sum
+```
+
+The hashes must match.
+
+### 3. Mutual TLS behavior
+
+Run the authenticated request from the controller runtime, where its certificate
+paths and the agent network are available. Then try a request without a client
+certificate; it must fail. Do not use `-k`, disable verification, change the
+endpoint to HTTP, or enable redirects as a workaround.
+
+### 4. Host forwarding policy
+
+Docker-published agent ports are filtered through forwarding policy, usually
+`DOCKER-USER`, not only INPUT/UFW. Confirm:
+
+- established traffic is permitted;
+- original-destination TCP/9002 from the controller is permitted;
+- other source addresses are dropped; and
+- rules persist after Docker and host restarts.
+
+Test from both an authorized controller source and a denied source. A TCP timeout
+from every source usually means routing/firewall; a TLS alert after connection
+usually means certificate authentication.
+
+## Endpoint selection error
+
+Errors such as `Docker endpoint was not found` or `Docker endpoint is disabled`
+are fail-closed behavior. Refresh **Fleet**, select the intended enabled host,
+and retry. Never change the code to fall back to the first host: that can perform
+an operation on the wrong Docker daemon.
+
+If a project URL returns 404, confirm that the project belongs to the selected
+endpoint. Project IDs are scoped by endpoint even if another host has a project
+with the same name.
+
+## Project discovery misses a Compose project
+
+On the owning host, inspect the running container labels:
+
+```bash
+docker inspect CONTAINER --format '{{json .Config.Labels}}'
+```
+
+Confirm:
+
+- `com.docker.compose.project.working_dir` points to the real owning directory;
+- the directory and all resolved symlink targets are mounted into the agent;
+- the resolved paths are below `DOCKDASH_COMPOSE_ROOTS`;
+- the directory is below a configured scan root if no labeled container is
+  running;
+- the directory is not an archive/backup tree; and
+- the Compose filename is one of `compose.yaml`, `compose.yml`,
+  `docker-compose.yaml`, or `docker-compose.yml`.
+
+Do not widen roots to `/` or mount an entire home directory just to make a
+project appear. Add the narrow required path and redeploy the agent.
+
+## Validation fails
+
+### Insufficient free space
+
+The default minimum is 1 GiB at the project working directory. Check both blocks
+and inodes:
+
+```bash
+df -h PROJECT_DIRECTORY
+df -i PROJECT_DIRECTORY
+```
+
+Free capacity through the workload's normal retention/cleanup process. Do not
+run a full Docker prune through the agent; it is intentionally unavailable.
+
+### Required mount is unavailable
+
+DockDash uses mountpoint semantics, not directory existence:
+
+```bash
+mountpoint /expected/path
+findmnt /expected/path
+```
+
+An empty directory left behind after an NFS/storage failure must not pass. Restore
+the storage dependency and validate again.
+
+### Compose configuration is invalid
+
+Run validation from the exact recorded working directory and with every recorded
+Compose file:
+
+```bash
+cd PROJECT_DIRECTORY
+docker compose config --quiet
+```
+
+Check missing `env_file` paths, unresolved variables, invalid YAML, and symlinked
+files. Keep secrets out of copied diagnostic output.
+
+## Job remains queued or running
+
+Check the worker:
+
+```bash
+docker compose ps dockdash-worker
+docker compose logs --tail=200 dockdash-worker
+```
+
+Only one worker can hold the shared lock. A second worker should exit with
+`Another DockDash project worker is already active`. Do not remove the lock file
+while a worker process is alive.
+
+After a crash/restart, interrupted `running` jobs should return to `queued` and
+be reclaimed. If a job fails, read its `stage`, `error`, and bounded output in
+the Projects view. Correct the cause and submit a new action; do not edit job
+status directly in SQLite.
+
+## Lifecycle action surprises
+
+- `start`, `restart`, `up`, `recreate`, and `scale` do not implicitly select
+  intentionally stopped services when no services are supplied.
+- `down` removes project containers/networks and orphans but never volumes.
+- Remote container exec is deliberately rejected. Use an audited host access
+  path when interactive troubleshooting is required.
+- Remote full system prune is deliberately rejected. Unused-volume prune is
+  available, is host-wide and destructive, and must not be used as a diagnostic
+  shortcut.
+
+## Application health check fails
+
+From the agent host, test the exact URL without embedding credentials:
+
+```bash
+curl --head --max-time 10 http://service.example/health
+```
+
+Confirm DNS, routing, certificate trust, response time, and expected status.
+DockDash accepts 200–399 by default. Configure exact accepted status codes only
+when the response is intentionally healthy (for example, a documented 401
+authentication challenge). Do not accept 500-series responses simply to make a
+deployment green.
+
+## Git-backed refresh fails
+
+Check repository reachability, ref name, credential mechanism, Compose path, and
+free space. Repository URLs containing embedded credentials should be rejected
+operationally even if Git accepts them.
+
+The agent validates a staged clone before promotion. Confirm the active checkout
+was not changed and inspect the managed backup directory. Do not manually delete
+the active checkout until the backup and failed staging state are understood.
+
+## Container links point to the wrong host
+
+Set `HOST_IP` to the address clients use for the selected local Docker host and
+redeploy the controller. A published TCP port is shown as a web link only when
+the probe confirms HTTP or HTTPS; databases, SSH, MQTT, and other protocols are
+correctly left non-clickable.
+
+## Safe diagnostic bundle
+
+Collect metadata without environment values, certificate contents, Compose
+rendering, or database records:
+
+```bash
+git rev-parse HEAD
 docker version
-
-# Check Docker socket
-ls -l /var/run/docker.sock
+docker compose version
+docker compose ps
+docker compose images
+docker compose logs --tail=100 dockdash dockdash-worker
+curl --fail http://127.0.0.1:9999/health
+df -h data
+stat -c '%a %U:%G %n' data data/dockdash.db data/pki data/pki/controller.key 2>/dev/null
 ```
 
-#### Volume not persisting data
+Before sharing logs, review them for hostnames, internal addresses, repository
+URLs, webhook URLs, and other environment-specific data.
 
-**Solution:**
-```bash
-# List volumes
-docker volume ls
-
-# Inspect the volume
-docker volume inspect dockdash_data
-
-# Check mount point
-docker compose inspect dockdash | grep -A 5 "Mounts"
-```
-
----
-
-### SSL/HTTPS Issues
-
-#### Error: Connection not secure / Certificate errors
-
-**Solution:** Set up a reverse proxy with SSL:
-
-**Using nginx:**
-```nginx
-upstream dockdash {
-    server localhost:9999;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name dockdash.example.com;
-
-    ssl_certificate /path/to/cert.pem;
-    ssl_certificate_key /path/to/key.pem;
-
-    location / {
-        proxy_pass http://dockdash;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-
-# Redirect HTTP to HTTPS
-server {
-    listen 80;
-    server_name dockdash.example.com;
-    return 301 https://$server_name$request_uri;
-}
-```
-
-**Using Traefik (recommended for Docker):**
-```yaml
-services:
-  dockdash:
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.dockdash.rule=Host(`dockdash.example.com`)"
-      - "traefik.http.routers.dockdash.entrypoints=websecure"
-      - "traefik.http.routers.dockdash.tls.certresolver=letsencrypt"
-      - "traefik.http.services.dockdash.loadbalancer.server.port=5000"
-```
-
----
-
-## Debugging
-
-### Enable Debug Logging
-
-**Check application logs:**
-```bash
-docker compose logs -f dockdash
-```
-
-**Check Docker socket access:**
-```bash
-docker compose exec dockdash python -c "
-import docker
-try:
-    client = docker.from_env()
-    containers = client.containers.list()
-    print(f'Successfully connected. Found {len(containers)} containers')
-except Exception as e:
-    print(f'Error: {e}')
-"
-```
-
-**Check database:**
-```bash
-docker compose exec dockdash python -c "
-from app import app, db, User, SharedURL
-with app.app_context():
-    print(f'Users: {User.query.count()}')
-    print(f'URLs: {SharedURL.query.count()}')
-"
-```
-
-### View Raw Database
-
-```bash
-# Enter the container
-docker compose exec dockdash bash
-
-# Use sqlite3
-sqlite3 /app/data/dockdash.db
-
-# View tables
-.tables
-
-# View schema
-.schema
-
-# Query users
-SELECT * FROM user;
-
-# Exit
-.quit
-```
-
----
-
-## Getting Help
-
-### Collect Debug Information
-
-```bash
-#!/bin/bash
-echo "=== Docker Version ==="
-docker --version
-
-echo "=== Docker Compose Version ==="
-docker-compose --version
-
-echo "=== DockDash Logs ==="
-docker-compose logs dockdash | tail -50
-
-echo "=== Container Status ==="
-docker-compose ps
-
-echo "=== Volume Status ==="
-docker volume ls | grep dockdash
-
-echo "=== Network Status ==="
-docker network ls | grep dockdash
-
-echo "=== Database Status ==="
-docker-compose exec dockdash ls -lah /app/data/ 2>/dev/null || echo "Cannot access database directory"
-```
-
-Save this as `debug.sh` and run:
-```bash
-chmod +x debug.sh
-./debug.sh > debug.log
-```
-
-Share the output when reporting issues.
-
----
-
-## Prevention Checklist
-
-- [ ] Use named volumes for persistent data
-- [ ] Set appropriate resource limits
-- [ ] Keep Docker/Podman and images updated
-- [ ] Monitor disk space
-- [ ] Regular backups of database
-- [ ] Use HTTPS in production
-- [ ] Enable rate limiting
-- [ ] Strong SECRET_KEY configured
-- [ ] Change default credentials
-- [ ] Monitor logs for errors
-
----
-
-**Last Updated:** February 1, 2026
-**For more help:** See [SECURITY.md](SECURITY.md) for production deployment guidance.
+See [Operations](OPERATIONS.md) for enrollment, backup, rotation, upgrade, and
+rollback, and [Security](SECURITY.md) for controls that must not be bypassed.
