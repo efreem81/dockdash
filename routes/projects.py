@@ -30,7 +30,13 @@ def projects():
     endpoints = Endpoint.query.filter_by(enabled=True).order_by(Endpoint.name).all()
     items = ComposeProject.query.filter_by(endpoint_id=endpoint.id).order_by(ComposeProject.name).all()
     jobs = OperationJob.query.filter_by(endpoint_id=endpoint.id).order_by(OperationJob.id.desc()).limit(30).all()
-    return render_template('projects.html', endpoint=endpoint, endpoints=endpoints, projects=items, jobs=jobs)
+    focused_project_id = request.args.get('project_id', type=int)
+    if focused_project_id not in {item.id for item in items}:
+        focused_project_id = None
+    return render_template(
+        'projects.html', endpoint=endpoint, endpoints=endpoints, projects=items,
+        jobs=jobs, focused_project_id=focused_project_id,
+    )
 
 
 @projects_bp.post('/api/projects/discover')
@@ -93,7 +99,7 @@ def api_project_action(project_id):
     project = _project_for_request(project_id, data)
     data.pop('endpoint_id', None)
     action = data.pop('action', None)
-    allowed = {'validate', 'start', 'stop', 'restart', 'pull', 'up', 'recreate', 'logs', 'scale', 'down'}
+    allowed = {'validate', 'start', 'stop', 'restart', 'pull', 'up', 'recreate', 'update', 'logs', 'scale', 'down'}
     if action not in allowed:
         return jsonify(success=False, error='Unsupported project action'), 400
     try:

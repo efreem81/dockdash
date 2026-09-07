@@ -11,7 +11,8 @@ async function saveProject(id){
   const response=await fetch(`/api/projects/${id}`,{method:'PUT',headers:csrfHeaders(),body:JSON.stringify(payload)}); const data=await response.json(); if(!data.success) alert(data.error);
 }
 async function projectAction(id,action){
-  if(['stop','restart','pull','up'].includes(action) && !confirm(`${action} this Compose project?`)) return;
+  const prompts={stop:'Stop this Compose project?',restart:'Restart this Compose project?',pull:'Pull project images without redeploying?',up:'Deploy the current Compose definition?',update:'Pull the current image tags, force-redeploy running services, verify health, and refresh vulnerability evidence?'};
+  if(prompts[action] && !confirm(prompts[action])) return;
   const response=await fetch(`/api/projects/${id}/action`,{method:'POST',headers:csrfHeaders(),body:JSON.stringify({action,endpoint_id:endpointId()})}); const data=await response.json();
   if(!data.success){alert(data.error);return;} pollJob(data.job.id,id);
 }
@@ -34,3 +35,4 @@ async function refreshGit(id){
 }
 async function showProjectDetails(id){const r=await fetch(`/api/projects/${id}?endpoint_id=${encodeURIComponent(endpointId())}`);const d=await r.json();document.getElementById('historyOutput').textContent=JSON.stringify(d,null,2);document.getElementById('historyModal').style.display='flex';}
 function closeHistory(e){if(e&&e.target.id!=='historyModal')return;document.getElementById('historyModal').style.display='none';}
+document.addEventListener('DOMContentLoaded',()=>{const focused=document.querySelector('.project-card-focused');if(focused)focused.scrollIntoView({behavior:'smooth',block:'center'});});

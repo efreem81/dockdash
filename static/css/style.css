@@ -3725,6 +3725,15 @@ a:hover {
     font-size: 0.9rem;
 }
 
+.vuln-remediation-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-basis: 100%;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--border-color);
+}
+
 .vuln-stat.stat-critical { background: #FEE2E2; color: #DC2626; }
 .vuln-stat.stat-high { background: #FFEDD5; color: #EA580C; }
 .vuln-stat.stat-medium { background: #FEF3C7; color: #CA8A04; }
@@ -4447,6 +4456,7 @@ html {
     margin-bottom: 1.5rem;
 }
 .endpoint-card, .project-card { margin-bottom: 0; }
+.project-card-focused { outline: 3px solid var(--primary-color); outline-offset: 2px; }
 .endpoint-name-badge {
     display: inline-flex;
     width: fit-content;

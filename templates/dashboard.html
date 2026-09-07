@@ -32,13 +32,12 @@
             <button class="btn btn-secondary" onclick="checkAllImageUpdates()" id="checkUpdatesBtn" title="Check for image updates on {{ endpoint.name }}">
                 🔍 Updates
             </button>
-            {% if endpoint.kind == 'local' %}
             <button class="btn btn-success" onclick="updateAllContainers()" id="updateAllBtn" style="display: {{ 'inline-flex' if updates_count > 0 else 'none' }};" title="Update all containers with available updates">
                 ⬆️ Update All (<span id="updateAllCount">{{ updates_count }}</span>)
             </button>
-            {% else %}
-            <a class="btn btn-success" href="{{ url_for('projects.projects', endpoint_id=endpoint.id) }}" title="Deploy remote updates through the owning Compose projects">
-                ⬆️ Deploy via Projects{% if updates_count > 0 %} ({{ updates_count }}){% endif %}
+            {% if endpoint.kind == 'agent' %}
+            <a class="btn btn-secondary" href="{{ url_for('projects.projects', endpoint_id=endpoint.id) }}" title="Manage Compose projects on this host">
+                📦 Compose Projects
             </a>
             {% endif %}
             <button class="btn btn-secondary" onclick="scanAllVulnerabilities()" id="scanVulnBtn" title="Scan all images for security vulnerabilities">
@@ -70,9 +69,15 @@
             <button class="btn btn-warning btn-sm" onclick="bulkRestartContainers()" title="Restart selected containers">
                 🔄 Restart
             </button>
+            {% if endpoint.kind == 'agent' %}
+            <button class="btn btn-info btn-sm" onclick="bulkUpdateComposeServices()" title="Pull, redeploy, and rescan selected Compose services">
+                ⬆️ Update services
+            </button>
+            {% else %}
             <button class="btn btn-info btn-sm" onclick="bulkRecreateContainers()" title="Recreate selected containers">
                 🔃 Recreate
             </button>
+            {% endif %}
             <button class="btn btn-secondary btn-sm" onclick="clearSelection()" title="Clear selection">
                 ✕ Clear
             </button>
@@ -212,6 +217,11 @@
              data-image-full="{{ container.image }}"
              data-created="{{ container.created }}"
              data-compose-project="{{ container.compose_project or '' }}"
+             data-compose-service="{{ container.management.service or '' }}"
+             data-management-mode="{{ container.management.mode }}"
+             data-project-id="{{ container.management.project_id or '' }}"
+             data-project-name="{{ container.management.project_name or '' }}"
+             data-can-update="{{ 'true' if container.management.can_update else 'false' }}"
              data-id="{{ container.id }}"
              data-endpoint-id="{{ container.endpoint_id }}"
              data-endpoint-name="{{ container.endpoint_name }}"
@@ -221,9 +231,10 @@
              data-vuln-high="{{ container.vulnerabilities.high if container.vulnerabilities else 0 }}"
              data-vuln-medium="{{ container.vulnerabilities.medium if container.vulnerabilities else 0 }}"
              data-vuln-low="{{ container.vulnerabilities.low if container.vulnerabilities else 0 }}"
-             data-vuln-total="{{ container.vulnerabilities.total if container.vulnerabilities else 0 }}">
+             data-vuln-total="{{ container.vulnerabilities.total if container.vulnerabilities else 0 }}"
+             data-vuln-scanned="{{ 'true' if container.vulnerabilities else 'false' }}">
             {% if not all_hosts %}<label class="container-select-checkbox" onclick="event.stopPropagation()">
-                <input type="checkbox" class="container-checkbox" data-id="{{ container.id }}" data-name="{{ container.name }}" data-status="{{ container.status }}" onchange="updateBulkSelection()">
+                <input type="checkbox" class="container-checkbox" data-id="{{ container.id }}" data-name="{{ container.name }}" data-status="{{ container.status }}" data-project-id="{{ container.management.project_id or '' }}" data-project-name="{{ container.management.project_name or '' }}" data-compose-service="{{ container.management.service or '' }}" data-can-update="{{ 'true' if container.management.can_update else 'false' }}" onchange="updateBulkSelection()">
             </label>{% endif %}
             <div class="container-header">
                 {% if all_hosts %}
@@ -356,7 +367,8 @@
         {% if containers %}
             <!-- Compose Project Groups -->
             {% for project, project_containers in compose_groups.items() %}
-            <div class="compose-group" data-project="{{ project }}">
+            {% set project_owner = project_containers|first %}
+            <div class="compose-group" data-project="{{ project }}" data-project-id="{{ project_owner.management.project_id or '' }}">
                 <div class="compose-group-header" onclick="toggleComposeGroup('{{ project }}')">
                     <div class="compose-group-info">
                         <span class="compose-group-toggle">▼</span>
@@ -368,16 +380,21 @@
                             {{ running_count }}/{{ project_containers|length }} running
                         </span>
                     </div>
-                    {% if not all_hosts %}<div class="compose-group-actions" onclick="event.stopPropagation()">
-                        <button class="btn btn-success btn-xs" onclick="startComposeProject('{{ project }}')" title="Start all containers in project">
+                    {% if not all_hosts and project_owner.management.project_id %}<div class="compose-group-actions" onclick="event.stopPropagation()">
+                        <button class="btn btn-success btn-xs" onclick="runComposeProjectAction({{ project_owner.management.project_id }}, 'start', '{{ project }}')" title="Start this Compose project">
                             ▶️ Start All
                         </button>
-                        <button class="btn btn-danger btn-xs" onclick="stopComposeProject('{{ project }}')" title="Stop all containers in project">
+                        <button class="btn btn-danger btn-xs" onclick="runComposeProjectAction({{ project_owner.management.project_id }}, 'stop', '{{ project }}')" title="Stop this Compose project">
                             ⏹️ Stop All
                         </button>
-                        <button class="btn btn-warning btn-xs" onclick="restartComposeProject('{{ project }}')" title="Restart all containers in project">
+                        <button class="btn btn-warning btn-xs" onclick="runComposeProjectAction({{ project_owner.management.project_id }}, 'restart', '{{ project }}')" title="Restart this Compose project">
                             🔄 Restart All
                         </button>
+                        <button class="btn btn-info btn-xs" onclick="runComposeProjectAction({{ project_owner.management.project_id }}, 'update', '{{ project }}')" title="Pull latest images, redeploy running services, and refresh security evidence">
+                            ⬆️ Update
+                        </button>
+                    </div>{% elif not all_hosts %}<div class="compose-group-actions" onclick="event.stopPropagation()">
+                        <a class="btn btn-secondary btn-xs" href="{{ url_for('projects.projects', endpoint_id=endpoint.id) }}" title="Discover and adopt this Compose project">Adopt project</a>
                     </div>{% endif %}
                 </div>
                 <div class="compose-group-containers container-grid" id="compose-group-{{ project|replace(' ', '-') }}">
@@ -455,18 +472,25 @@
                     data-id="{{ container.id }}"
                     data-endpoint-id="{{ container.endpoint_id }}"
                     data-endpoint-name="{{ container.endpoint_name }}"
+                    data-compose-project="{{ container.compose_project or '' }}"
+                    data-compose-service="{{ container.management.service or '' }}"
+                    data-management-mode="{{ container.management.mode }}"
+                    data-project-id="{{ container.management.project_id or '' }}"
+                    data-project-name="{{ container.management.project_name or '' }}"
+                    data-can-update="{{ 'true' if container.management.can_update else 'false' }}"
                     data-key="{{ container.endpoint_id }}:{{ container.id }}"
                     data-has-update="{{ 'true' if container.has_update else 'false' }}"
                     data-vuln-critical="{{ container.vulnerabilities.critical if container.vulnerabilities else 0 }}"
                     data-vuln-high="{{ container.vulnerabilities.high if container.vulnerabilities else 0 }}"
                     data-vuln-medium="{{ container.vulnerabilities.medium if container.vulnerabilities else 0 }}"
                     data-vuln-low="{{ container.vulnerabilities.low if container.vulnerabilities else 0 }}"
-                    data-vuln-total="{{ container.vulnerabilities.total if container.vulnerabilities else 0 }}">
+                    data-vuln-total="{{ container.vulnerabilities.total if container.vulnerabilities else 0 }}"
+                    data-vuln-scanned="{{ 'true' if container.vulnerabilities else 'false' }}">
                     {% if all_hosts %}
                     <td><span class="endpoint-name-badge">{{ container.endpoint_name }}</span></td>
                     {% else %}
                     <td class="checkbox-col">
-                        <input type="checkbox" class="container-checkbox" data-id="{{ container.id }}" data-name="{{ container.name }}" data-status="{{ container.status }}" onchange="updateBulkSelection()">
+                        <input type="checkbox" class="container-checkbox" data-id="{{ container.id }}" data-name="{{ container.name }}" data-status="{{ container.status }}" data-project-id="{{ container.management.project_id or '' }}" data-project-name="{{ container.management.project_name or '' }}" data-compose-service="{{ container.management.service or '' }}" data-can-update="{{ 'true' if container.management.can_update else 'false' }}" onchange="updateBulkSelection()">
                     </td>
                     {% endif %}
                     <td class="cell-name cell-name-clickable" onclick="{% if all_hosts %}location.href='/dashboard?endpoint_id={{ container.endpoint_id }}'{% else %}openContainerDetail('{{ container.id }}', '{{ container.name }}', '{{ container.image }}', '{{ container.status }}', '{{ container.has_update|lower }}'){% endif %}" title="{% if all_hosts %}Open {{ container.endpoint_name }} to manage{% else %}Click for full details{% endif %}">
@@ -616,10 +640,10 @@
             </div>
             <div class="modal-body" id="inspectContent">
                 <div class="inspect-tabs">
-                    <button class="tab-btn active" onclick="showInspectTab('env')">Environment</button>
-                    <button class="tab-btn" onclick="showInspectTab('mounts')">Mounts</button>
-                    <button class="tab-btn" onclick="showInspectTab('networks')">Networks</button>
-                    <button class="tab-btn" onclick="showInspectTab('labels')">Labels</button>
+                    <button class="tab-btn active" onclick="showInspectTab('env', this)">Environment</button>
+                    <button class="tab-btn" onclick="showInspectTab('mounts', this)">Mounts</button>
+                    <button class="tab-btn" onclick="showInspectTab('networks', this)">Networks</button>
+                    <button class="tab-btn" onclick="showInspectTab('labels', this)">Labels</button>
                 </div>
                 <div class="inspect-tab-content" id="inspectTabContent"></div>
             </div>

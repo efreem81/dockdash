@@ -1127,9 +1127,12 @@ function closeInspect(e) {
     currentInspectData = null;
 }
 
-function showInspectTab(tab) {
-    document.querySelectorAll('.inspect-tabs .tab-btn').forEach(btn => btn.classList.remove('active'));
-    if (event && event.target) event.target.classList.add('active');
+function showInspectTab(tab, button = null) {
+    const buttons = Array.from(document.querySelectorAll('.inspect-tabs .tab-btn'));
+    buttons.forEach(btn => btn.classList.remove('active'));
+    const tabOrder = ['env', 'mounts', 'networks', 'labels'];
+    const activeButton = button || buttons[tabOrder.indexOf(tab)];
+    if (activeButton) activeButton.classList.add('active');
 
     const content = document.getElementById('inspectTabContent');
     if (!currentInspectData) return;
@@ -1225,6 +1228,7 @@ async function scanAllVulnerabilities() {
 // =============================================================================
 
 let currentVulnData = [];
+let currentVulnContext = null;
 
 async function showVulnerabilities(imageRef, containerName) {
     const modal = document.getElementById('vulnModal');
@@ -1237,6 +1241,20 @@ async function showVulnerabilities(imageRef, containerName) {
     tableBody.innerHTML = '';
     modal.style.display = 'flex';
 
+    const candidates = document.querySelectorAll('.container-card[data-image-full], tr[data-image-full]');
+    const source = Array.from(candidates).find(item =>
+        item.dataset.imageFull === imageRef && item.dataset.name === String(containerName).toLowerCase()
+    );
+    currentVulnContext = source ? {
+        containerId: source.dataset.id,
+        containerName,
+        image: imageRef,
+        projectId: source.dataset.projectId,
+        projectName: source.dataset.projectName,
+        service: source.dataset.composeService,
+        canUpdate: source.dataset.canUpdate === 'true'
+    } : null;
+
     try {
         const response = await fetch(`/api/vulnerabilities/details/${encodeURIComponent(imageRef)}`);
         const data = await response.json();
@@ -1248,6 +1266,19 @@ async function showVulnerabilities(imageRef, containerName) {
 
         currentVulnData = data.vulnerabilities || [];
         const summary = data.summary || {};
+        const fixable = currentVulnData.filter(item => item.fixed_version).length;
+        let remediation = '<span class="text-muted">This workload has no automated update path.</span>';
+        if (currentVulnContext?.projectId) {
+            if (currentVulnContext.canUpdate) {
+                remediation = `<button class="btn btn-success btn-sm" onclick="updateCurrentVulnerableService()">⬆️ Pull, redeploy & rescan</button>
+                    <button class="btn btn-secondary btn-sm" onclick="openCurrentVulnerabilityProject()">Open Compose project</button>`;
+            } else {
+                remediation = `<span class="text-muted">This service must be running before an in-place update.</span>
+                    <button class="btn btn-secondary btn-sm" onclick="openCurrentVulnerabilityProject()">Open Compose project</button>`;
+            }
+        } else if (document.querySelector('.dashboard')?.dataset.endpointKind === 'agent') {
+            remediation = '<span class="text-muted">Safe remote updates require an adopted Compose project.</span>';
+        }
 
         // Render summary bar
         summaryBar.innerHTML = `
@@ -1257,11 +1288,13 @@ async function showVulnerabilities(imageRef, containerName) {
             <div class="vuln-stat stat-low">🟢 Low: ${summary.low || 0}</div>
             <div style="flex: 1;"></div>
             <div class="vuln-stat" style="background: #E2E8F0; color: #475569;">
-                📦 Image: ${data.image}
+                📦 Image: ${escapeHtml(data.image || imageRef)}
             </div>
             <div class="vuln-stat" style="background: #E2E8F0; color: #475569;">
                 🕐 Scanned: ${data.scanned_at ? new Date(data.scanned_at).toLocaleString() : 'N/A'}
             </div>
+            <div class="vuln-stat" style="background: #E2E8F0; color: #475569;">🔧 Fix published: ${fixable}</div>
+            <div class="vuln-remediation-actions">${remediation}</div>
         `;
 
         // Render table
@@ -1343,6 +1376,29 @@ function closeVulnModal(event) {
     if (event && event.target !== event.currentTarget) return;
     document.getElementById('vulnModal').style.display = 'none';
     currentVulnData = [];
+    currentVulnContext = null;
+}
+
+function openCurrentVulnerabilityProject() {
+    const context = currentVulnContext;
+    if (!context?.projectId) return;
+    const endpointId = document.querySelector('.dashboard')?.dataset.endpointId;
+    location.href = `/projects?endpoint_id=${encodeURIComponent(endpointId)}&project_id=${encodeURIComponent(context.projectId)}`;
+}
+
+async function updateCurrentVulnerableService() {
+    const context = currentVulnContext;
+    if (!context?.canUpdate || !context.projectId || !context.service) return;
+    if (!confirm(`Remediate ${context.containerName}?\n\nDockDash will pull the current image tag, redeploy only ${context.service}, verify health, and rescan it. If the tag has no newer fixed image, findings may remain and you may need to change the tag in Compose.`)) return;
+    document.getElementById('vulnModal').style.display = 'none';
+    showToast('info', `${context.containerName}: update and security refresh queued…`, 7000);
+    try {
+        const job = await queueComposeAction(context.projectId, 'update', [context.service]);
+        showComposeCompletion(job, `${context.containerName}: remediation workflow`);
+        setTimeout(() => location.reload(), 900);
+    } catch (error) {
+        showToast('error', `${context.containerName}: ${error.message}`, 12000);
+    }
 }
 
 // =============================================================================
@@ -1552,112 +1608,57 @@ function restoreCollapsedGroups() {
     }
 }
 
-async function startComposeProject(project) {
-    const containers = getContainersByProject(project);
-    const stoppedContainers = containers.filter(c => c.status !== 'running');
-
-    if (stoppedContainers.length === 0) {
-        showToast('info', `All containers in ${project} are already running`);
-        return;
+async function waitForProjectJob(jobId) {
+    const endpointId = document.querySelector('.dashboard')?.dataset.endpointId;
+    const deadline = Date.now() + 30 * 60 * 1000;
+    while (Date.now() < deadline) {
+        const response = await fetch(`/api/jobs/${jobId}?endpoint_id=${encodeURIComponent(endpointId)}`);
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || 'Could not read deployment job');
+        if (data.job.status === 'succeeded') return data.job;
+        if (data.job.status === 'failed') throw new Error(data.job.error || 'Deployment failed');
+        await new Promise(resolve => setTimeout(resolve, 1500));
     }
-
-    if (!confirm(`Start ${stoppedContainers.length} stopped container(s) in "${project}"?`)) return;
-
-    showToast('info', `Starting ${stoppedContainers.length} container(s)...`);
-
-    let success = 0;
-    let failed = 0;
-
-    for (const c of stoppedContainers) {
-        try {
-            const response = await fetch(`/api/container/${c.id}/start`, {
-                method: 'POST',
-                headers: csrfHeaders()
-            });
-            const data = await response.json();
-            if (data.success) success++;
-            else failed++;
-        } catch (e) {
-            failed++;
-        }
-    }
-
-    if (success > 0) showToast('success', `Started ${success} container(s)`);
-    if (failed > 0) showToast('error', `Failed to start ${failed} container(s)`);
-
-    setTimeout(() => location.reload(), 1000);
+    throw new Error('Deployment is still running; check Compose Projects for its status.');
 }
 
-async function stopComposeProject(project) {
-    const containers = getContainersByProject(project);
-    const runningContainers = containers.filter(c => c.status === 'running');
-
-    if (runningContainers.length === 0) {
-        showToast('info', `All containers in ${project} are already stopped`);
-        return;
-    }
-
-    if (!confirm(`Stop ${runningContainers.length} running container(s) in "${project}"?`)) return;
-
-    showToast('info', `Stopping ${runningContainers.length} container(s)...`);
-
-    let success = 0;
-    let failed = 0;
-
-    for (const c of runningContainers) {
-        try {
-            const response = await fetch(`/api/container/${c.id}/stop`, {
-                method: 'POST',
-                headers: csrfHeaders()
-            });
-            const data = await response.json();
-            if (data.success) success++;
-            else failed++;
-        } catch (e) {
-            failed++;
-        }
-    }
-
-    if (success > 0) showToast('success', `Stopped ${success} container(s)`);
-    if (failed > 0) showToast('error', `Failed to stop ${failed} container(s)`);
-
-    setTimeout(() => location.reload(), 1000);
+async function queueComposeAction(projectId, action, services = []) {
+    const endpointId = document.querySelector('.dashboard')?.dataset.endpointId;
+    const response = await fetch(`/api/projects/${projectId}/action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
+        body: JSON.stringify({ action, services, endpoint_id: endpointId })
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) throw new Error(data.error || 'Could not queue Compose action');
+    return waitForProjectJob(data.job.id);
 }
 
-async function restartComposeProject(project) {
-    const containers = getContainersByProject(project);
-    const runningContainers = containers.filter(c => c.status === 'running');
+function showComposeCompletion(job, label) {
+    const warning = (job.output || '').includes('Warning:');
+    showToast(
+        warning ? 'warning' : 'success',
+        warning ? `${label} deployed, but an evidence refresh warning was recorded. Review Compose Projects.` : `${label} completed`,
+        warning ? 10000 : 3000
+    );
+}
 
-    if (runningContainers.length === 0) {
-        showToast('info', `No running containers in ${project} to restart`);
-        return;
+async function runComposeProjectAction(projectId, action, projectName) {
+    const descriptions = {
+        start: 'Start this Compose project?',
+        stop: 'Stop this Compose project?',
+        restart: 'Restart this Compose project?',
+        update: 'Pull current image tags, force-redeploy running services, verify health, and refresh vulnerability evidence?'
+    };
+    if (!projectId || !confirm(`${projectName}\n\n${descriptions[action] || `Run ${action}?`}`)) return;
+    showToast('info', `${projectName}: ${action} job queued…`, 6000);
+    try {
+        const job = await queueComposeAction(projectId, action);
+        showComposeCompletion(job, `${projectName}: ${action}`);
+        setTimeout(() => location.reload(), 900);
+    } catch (error) {
+        showToast('error', `${projectName}: ${error.message}`, 10000);
     }
-
-    if (!confirm(`Restart ${runningContainers.length} container(s) in "${project}"?`)) return;
-
-    showToast('info', `Restarting ${runningContainers.length} container(s)...`);
-
-    let success = 0;
-    let failed = 0;
-
-    for (const c of runningContainers) {
-        try {
-            const response = await fetch(`/api/container/${c.id}/restart`, {
-                method: 'POST',
-                headers: csrfHeaders()
-            });
-            const data = await response.json();
-            if (data.success) success++;
-            else failed++;
-        } catch (e) {
-            failed++;
-        }
-    }
-
-    if (success > 0) showToast('success', `Restarted ${success} container(s)`);
-    if (failed > 0) showToast('error', `Failed to restart ${failed} container(s)`);
-
-    setTimeout(() => location.reload(), 1000);
 }
 
 function getContainersByProject(project) {
@@ -1665,7 +1666,11 @@ function getContainersByProject(project) {
     return Array.from(cards).map(card => ({
         id: card.dataset.id,
         name: card.dataset.name,
-        status: card.dataset.status
+        status: card.dataset.status,
+        projectId: card.dataset.projectId,
+        projectName: card.dataset.projectName,
+        service: card.dataset.composeService,
+        canUpdate: card.dataset.canUpdate === 'true'
     }));
 }
 
@@ -1734,7 +1739,11 @@ function getSelectedContainers() {
         selected.push({
             id: cb.dataset.id,
             name: cb.dataset.name,
-            status: cb.dataset.status
+            status: cb.dataset.status,
+            projectId: cb.dataset.projectId,
+            projectName: cb.dataset.projectName,
+            service: cb.dataset.composeService,
+            canUpdate: cb.dataset.canUpdate === 'true'
         });
     });
     return selected;
@@ -1860,6 +1869,38 @@ async function bulkRecreateContainers() {
     setTimeout(() => location.reload(), 1500);
 }
 
+async function bulkUpdateComposeServices() {
+    const selected = getSelectedContainers();
+    const eligible = selected.filter(item => item.canUpdate && item.projectId && item.service);
+    const skipped = selected.length - eligible.length;
+    if (eligible.length === 0) {
+        showToast('warning', 'Select running services from adopted Compose projects. Standalone and stopped containers cannot be updated safely here.', 9000);
+        return;
+    }
+
+    const groups = new Map();
+    for (const item of eligible) {
+        if (!groups.has(item.projectId)) groups.set(item.projectId, { name: item.projectName, services: [] });
+        const services = groups.get(item.projectId).services;
+        if (!services.includes(item.service)) services.push(item.service);
+    }
+    const warning = skipped ? `\n\n${skipped} ineligible selection(s) will be skipped.` : '';
+    if (!confirm(`Update ${eligible.length} selected Compose service(s)?\n\nDockDash will pull their current tags, redeploy only those services, verify the project, and rescan images.${warning}`)) return;
+
+    showToast('info', `Queued ${groups.size} Compose update job(s)…`, 6000);
+    let completed = 0;
+    try {
+        for (const [projectId, group] of groups) {
+            const job = await queueComposeAction(projectId, 'update', group.services);
+            completed += 1;
+            showComposeCompletion(job, `${group.name}: update`);
+        }
+        setTimeout(() => location.reload(), 900);
+    } catch (error) {
+        showToast('error', `${completed}/${groups.size} project updates completed: ${error.message}`, 12000);
+    }
+}
+
 // =============================================================================
 // Container Update Functions
 // =============================================================================
@@ -1934,7 +1975,11 @@ async function updateAllContainers() {
     document.querySelectorAll('.container-card[data-has-update="true"]').forEach(card => {
         containersWithUpdates.push({
             id: card.dataset.id,
-            name: card.querySelector('.container-name')?.textContent?.replace(/\s*ⓘ\s*$/, '').trim() || card.dataset.id
+            name: card.querySelector('.container-name')?.textContent?.replace(/\s*ⓘ\s*$/, '').trim() || card.dataset.id,
+            projectId: card.dataset.projectId,
+            projectName: card.dataset.projectName,
+            service: card.dataset.composeService,
+            canUpdate: card.dataset.canUpdate === 'true'
         });
     });
 
@@ -1943,7 +1988,11 @@ async function updateAllContainers() {
         document.querySelectorAll('tr[data-has-update="true"]').forEach(row => {
             containersWithUpdates.push({
                 id: row.dataset.id,
-                name: row.querySelector('.cell-name strong')?.textContent?.trim() || row.dataset.id
+                name: row.querySelector('.cell-name strong')?.textContent?.trim() || row.dataset.id,
+                projectId: row.dataset.projectId,
+                projectName: row.dataset.projectName,
+                service: row.dataset.composeService,
+                canUpdate: row.dataset.canUpdate === 'true'
             });
         });
     }
@@ -1966,6 +2015,25 @@ async function updateAllContainers() {
     showToast('info', `Updating ${containersWithUpdates.length} container(s)...`, 5000);
 
     try {
+        const isRemote = document.querySelector('.dashboard')?.dataset.endpointKind === 'agent';
+        if (isRemote) {
+            const eligible = containersWithUpdates.filter(item => item.canUpdate && item.projectId && item.service);
+            const groups = new Map();
+            for (const item of eligible) {
+                if (!groups.has(item.projectId)) groups.set(item.projectId, { name: item.projectName, services: [] });
+                const services = groups.get(item.projectId).services;
+                if (!services.includes(item.service)) services.push(item.service);
+            }
+            if (groups.size === 0) throw new Error('No updateable running Compose services were found.');
+            for (const [projectId, group] of groups) {
+                const job = await queueComposeAction(projectId, 'update', group.services);
+                showComposeCompletion(job, `${group.name}: update`);
+            }
+            const skipped = containersWithUpdates.length - eligible.length;
+            if (skipped) showToast('warning', `${skipped} standalone or stopped container(s) require Compose adoption or a manual review.`);
+            setTimeout(() => location.reload(), 900);
+            return;
+        }
         const response = await fetch('/api/containers/update-all', {
             method: 'POST',
             headers: {
@@ -1978,6 +2046,7 @@ async function updateAllContainers() {
         });
 
         const data = await response.json();
+        if (!response.ok || data.success === false) throw new Error(data.error || 'Update failed');
 
         if (data.updated > 0) {
             showToast('success', `Updated ${data.updated} container(s) - waiting for startup...`);
@@ -1994,7 +2063,7 @@ async function updateAllContainers() {
 
     } catch (error) {
         console.error('Error updating containers:', error);
-        showToast('error', 'Failed to update containers');
+        showToast('error', error.message || 'Failed to update containers');
     } finally {
         btn.innerHTML = originalText;
         btn.disabled = false;
@@ -2053,6 +2122,7 @@ function renderContainerDetailModal(name, image, status, hasUpdate, containerDat
     const dashboard = document.querySelector('.dashboard');
     const isRemote = dashboard?.dataset.endpointKind === 'agent';
     const endpointId = dashboard?.dataset.endpointId;
+    const management = containerData.management || {};
 
     // Build vulnerability summary
     let vulnHtml = '';
@@ -2060,12 +2130,13 @@ function renderContainerDetailModal(name, image, status, hasUpdate, containerDat
     const row = document.querySelector(`tr[data-id="${currentDetailContainerId}"]`);
     const element = card || row;
 
+    let vulnTotal = 0;
     if (element) {
         const vulnCritical = parseInt(element.dataset.vulnCritical) || 0;
         const vulnHigh = parseInt(element.dataset.vulnHigh) || 0;
         const vulnMedium = parseInt(element.dataset.vulnMedium) || 0;
         const vulnLow = parseInt(element.dataset.vulnLow) || 0;
-        const vulnTotal = parseInt(element.dataset.vulnTotal) || 0;
+        vulnTotal = parseInt(element.dataset.vulnTotal) || 0;
 
         if (vulnTotal > 0) {
             vulnHtml = `
@@ -2079,7 +2150,7 @@ function renderContainerDetailModal(name, image, status, hasUpdate, containerDat
                     </button>
                 </div>
             `;
-        } else if (element.dataset.vulnTotal !== undefined) {
+        } else if (element.dataset.vulnScanned === 'true') {
             vulnHtml = `
                 <div class="security-summary-card">
                     <span class="security-stat clean">✓ No vulnerabilities found</span>
@@ -2098,6 +2169,29 @@ function renderContainerDetailModal(name, image, status, hasUpdate, containerDat
                 </div>
             `;
         }
+    }
+
+    let ownershipValue = 'Standalone container';
+    if (management.mode === 'compose') {
+        ownershipValue = `Compose: <strong>${escapeHtml(management.project_name || '')}</strong> / ${escapeHtml(management.service || '')}`;
+    } else if (management.mode === 'unadopted-compose') {
+        ownershipValue = `Compose metadata found, but <strong>${escapeHtml(management.project_name || '')}</strong> is not adopted`;
+    }
+
+    let updateActionHtml = '';
+    if (management.mode === 'compose') {
+        if (management.can_update) {
+            const label = hasUpdate ? '⬆️ Update service' : (vulnTotal > 0 ? '🛡️ Pull, redeploy & rescan' : '⬆️ Pull & redeploy service');
+            updateActionHtml = `<button class="btn btn-success action-btn-primary" onclick="updateCurrentContainer()">${label}</button>`;
+        } else {
+            updateActionHtml = `<button class="btn btn-secondary" onclick="openCurrentContainerProject()">📦 Open owning project</button>`;
+        }
+    } else if (!isRemote) {
+        updateActionHtml = hasUpdate
+            ? `<button class="btn btn-success action-btn-primary" onclick="closeContainerDetail(); updateContainer('${currentDetailContainerId}', '${escapeHtml(name)}');">⬆️ Update to Latest</button>`
+            : `<button class="btn btn-secondary" onclick="checkSingleContainerUpdate('${currentDetailContainerId}', '${escapeHtml(image)}');">🔍 Check for Updates</button>`;
+    } else {
+        updateActionHtml = `<button class="btn btn-secondary" onclick="location.href='/projects?endpoint_id=${encodeURIComponent(endpointId)}';">📦 Adopt into Compose</button>`;
     }
 
     // Build links section
@@ -2157,7 +2251,12 @@ function renderContainerDetailModal(name, image, status, hasUpdate, containerDat
                     <span class="info-item-label">Networks</span>
                     <span class="info-item-value">${networksHtml}</span>
                 </div>
+                <div class="info-item">
+                    <span class="info-item-label">Ownership</span>
+                    <span class="info-item-value">${ownershipValue}</span>
+                </div>
             </div>
+            ${management.mode === 'compose' ? `<button class="btn btn-secondary btn-sm" style="margin-top: .75rem" onclick="openCurrentContainerProject()">Open Compose project</button>` : ''}
         </div>
 
         <!-- Quick Actions -->
@@ -2175,26 +2274,14 @@ function renderContainerDetailModal(name, image, status, hasUpdate, containerDat
                     <button class="btn btn-success" onclick="closeContainerDetail(); startContainer('${currentDetailContainerId}', '${escapeHtml(name)}');">
                         ▶️ Start
                     </button>
-                    <button class="btn btn-danger" onclick="closeContainerDetail(); removeContainer('${currentDetailContainerId}', '${escapeHtml(name)}');">
+                    ${management.can_remove !== false ? `<button class="btn btn-danger" onclick="closeContainerDetail(); removeContainer('${currentDetailContainerId}', '${escapeHtml(name)}');">
                         🗑️ Delete
-                    </button>
+                    </button>` : ''}
                 `}
                 ${!isRemote ? `<button class="btn btn-info" onclick="closeContainerDetail(); recreateContainer('${currentDetailContainerId}', '${escapeHtml(name)}');">
                     🔃 Recreate
                 </button>` : ''}
-                ${hasUpdate && !isRemote ? `
-                    <button class="btn btn-success action-btn-primary" onclick="closeContainerDetail(); updateContainer('${currentDetailContainerId}', '${escapeHtml(name)}');">
-                        ⬆️ Update to Latest
-                    </button>
-                ` : hasUpdate && isRemote ? `
-                    <button class="btn btn-success action-btn-primary" onclick="location.href='/projects?endpoint_id=${encodeURIComponent(endpointId)}';">
-                        ⬆️ Deploy via Projects
-                    </button>
-                ` : `
-                    <button class="btn btn-secondary" onclick="checkSingleContainerUpdate('${currentDetailContainerId}', '${escapeHtml(image)}');">
-                        🔍 Check for Updates
-                    </button>
-                `}
+                ${updateActionHtml}
             </div>
         </div>
 
@@ -2212,6 +2299,8 @@ function renderContainerDetailModal(name, image, status, hasUpdate, containerDat
                     <button class="btn btn-secondary" onclick="closeContainerDetail(); openExec('${currentDetailContainerId}', '${escapeHtml(name)}');">
                         💻 Execute Command
                     </button>
+                ` : ''}
+                ${isRunning ? `
                     <button class="btn btn-secondary" onclick="closeContainerDetail(); toggleStats('${currentDetailContainerId}');">
                         📊 Live Stats
                     </button>
@@ -2243,6 +2332,33 @@ function renderContainerDetailModal(name, image, status, hasUpdate, containerDat
     `;
 }
 
+function openCurrentContainerProject() {
+    const management = currentDetailContainerData?.management || {};
+    const endpointId = document.querySelector('.dashboard')?.dataset.endpointId;
+    const projectQuery = management.project_id ? `&project_id=${encodeURIComponent(management.project_id)}` : '';
+    location.href = `/projects?endpoint_id=${encodeURIComponent(endpointId)}${projectQuery}`;
+}
+
+async function updateCurrentContainer() {
+    const data = currentDetailContainerData;
+    const management = data?.management || {};
+    if (!management.can_update || !management.project_id || !management.service) {
+        showToast('warning', management.update_reason || 'This container does not have a safe Compose update path.', 9000);
+        return;
+    }
+    const name = data.name || currentDetailContainerId;
+    if (!confirm(`Update ${name}?\n\nDockDash will pull the current image tag, force-redeploy only ${management.service}, verify project health, and refresh vulnerability evidence. Persistent volumes are preserved. Published fixes may require changing the image tag in the Compose project.`)) return;
+    closeContainerDetail();
+    showToast('info', `${name}: secure Compose update queued…`, 7000);
+    try {
+        const job = await queueComposeAction(management.project_id, 'update', [management.service]);
+        showComposeCompletion(job, `${name}: update and verification`);
+        setTimeout(() => location.reload(), 900);
+    } catch (error) {
+        showToast('error', `${name}: ${error.message}`, 12000);
+    }
+}
+
 function closeContainerDetail(e) {
     if (e && e.target && e.target.id !== 'containerDetailModal') return;
     document.getElementById('containerDetailModal').style.display = 'none';
@@ -2252,7 +2368,7 @@ function closeContainerDetail(e) {
 
 async function scanContainerFromDetail(containerId, containerName) {
     const content = document.getElementById('containerDetailContent');
-    const securitySection = content.querySelector('.detail-section:nth-child(4) .security-summary-card');
+    const securitySection = content.querySelector('.security-summary-card');
     if (securitySection) {
         securitySection.innerHTML = '<div class="loading">Scanning for vulnerabilities...</div>';
     }
@@ -2269,10 +2385,10 @@ async function scanContainerFromDetail(containerId, containerName) {
             return;
         }
 
-        const response = await fetch('/api/vulnerabilities/scan', {
+        const response = await fetch(`/api/vulnerabilities/scan-container/${encodeURIComponent(containerId)}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...csrfHeaders() },
-            body: JSON.stringify({ image: image })
+            body: JSON.stringify({ force: true })
         });
         const data = await response.json();
 

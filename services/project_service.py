@@ -20,6 +20,7 @@ ACTION_OPTION_KEYS = {
     'pull': {'services'},
     'up': {'services'},
     'recreate': {'services'},
+    'update': {'services'},
     'logs': {'services', 'tail'},
     'scale': {'scales'},
     'down': set(),
@@ -185,14 +186,30 @@ def run_claimed_job(job_id):
         db.session.commit()
         payload = _project_payload(project)
         payload.update(options)
-        payload['action'] = job.action
+        # "update" is a controller workflow: use the agent's constrained
+        # Compose recreate action, then refresh registry and vulnerability
+        # evidence before declaring the operation complete.
+        payload['action'] = 'recreate' if job.action == 'update' else job.action
         result = _client(project.endpoint).post('/v1/projects/action', json=payload, timeout=1800)
 
         job.stage = 'verify'
         db.session.commit()
         after = result.get('state') or project_state(project)
         job.after_state_json = json.dumps(after)
-        job.output = (result.get('output') or '')[-50000:]
+        output = result.get('output') or ''
+        if job.action == 'update':
+            job.stage = 'refresh-insights'
+            db.session.commit()
+            try:
+                refreshed = _refresh_image_insights(
+                    project, after, services=options.get('services'),
+                )
+                output = f'{output}\n\n{refreshed}'.strip()
+            except Exception as exc:
+                # The deployment is already complete. Preserve that successful
+                # result while making any follow-up evidence failure explicit.
+                output = f'{output}\n\nWarning: image insight refresh failed: {exc}'.strip()
+        job.output = output[-50000:]
         job.status = 'succeeded'
         job.stage = 'complete'
         job.completed_at = datetime.utcnow()
@@ -209,6 +226,40 @@ def run_claimed_job(job_id):
             job.completed_at = datetime.utcnow()
             db.session.commit()
         return False
+
+
+def _refresh_image_insights(project, state, services=None):
+    """Refresh update and vulnerability evidence after a Compose update."""
+    from services.fleet_service import check_endpoint_updates, scan_endpoint_images
+    from services.update_service import save_update_result
+    from services.vulnerability_service import save_scan_result
+
+    image_state = state.get('images') or {}
+    selected = set(services or image_state.keys())
+    images = list(dict.fromkeys(
+        details.get('image')
+        for service, details in image_state.items()
+        if service in selected and isinstance(details, dict) and details.get('image')
+    ))
+    if not images:
+        return 'No image references were available for post-deployment checks.'
+
+    update_result = check_endpoint_updates(project.endpoint, images=images)
+    warnings = []
+    for image_ref, result in (update_result.get('results') or {}).items():
+        save_update_result(image_ref, result, endpoint_id=project.endpoint_id)
+        if result.get('error'):
+            warnings.append(f'{image_ref} update check: {result["error"]}')
+
+    scan_result = scan_endpoint_images(project.endpoint, images=images)
+    for image_ref, result in (scan_result.get('results') or {}).items():
+        save_scan_result(image_ref, result, endpoint_id=project.endpoint_id)
+        if not result.get('success'):
+            warnings.append(f'{image_ref} vulnerability scan: {result.get("error") or "failed"}')
+    message = f'Refreshed update and vulnerability evidence for {len(images)} image(s).'
+    if warnings:
+        message += '\nWarning: ' + '; '.join(warnings)
+    return message
 
 
 def run_worker(app, once=False, poll_interval=1.0):

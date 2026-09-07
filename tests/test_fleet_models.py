@@ -6,7 +6,10 @@ from unittest.mock import patch
 
 from config import create_app, db
 from models import ComposeProject, DeploymentRevision, Endpoint
-from services.fleet_service import endpoint_health, list_containers, normalize_container
+from services.fleet_service import (
+    annotate_container_management, endpoint_health, list_containers,
+    normalize_container,
+)
 
 
 class FleetModelTests(unittest.TestCase):
@@ -74,6 +77,37 @@ class FleetModelTests(unittest.TestCase):
         endpoint.last_error = None
         endpoint.last_seen = endpoint.last_checked
         self.assertEqual(endpoint.to_dict()['status'], 'online')
+
+    def test_container_capabilities_follow_compose_ownership(self):
+        with self.app.app_context():
+            endpoint = Endpoint(name='agent', kind='agent', url='https://agent:9002')
+            db.session.add(endpoint)
+            db.session.flush()
+            project = ComposeProject(endpoint_id=endpoint.id, name='media', working_dir='/opt/media')
+            db.session.add(project)
+            db.session.commit()
+
+            compose, standalone = annotate_container_management(endpoint, [
+                {
+                    'id': 'one', 'name': 'plex', 'status': 'running',
+                    'image': 'plex:latest', 'compose_project': 'media',
+                    'compose_service': 'plex',
+                },
+                {
+                    'id': 'two', 'name': 'utility', 'status': 'exited',
+                    'image': 'utility:latest',
+                },
+            ])
+
+            self.assertEqual(compose['management']['mode'], 'compose')
+            self.assertEqual(compose['management']['project_id'], project.id)
+            self.assertTrue(compose['management']['can_update'])
+            self.assertFalse(compose['management']['can_remove'])
+            self.assertTrue(compose['management']['can_stats'])
+            self.assertFalse(compose['management']['can_exec'])
+            self.assertEqual(standalone['management']['mode'], 'standalone')
+            self.assertFalse(standalone['management']['can_update'])
+            self.assertTrue(standalone['management']['can_remove'])
 
     def test_failed_live_health_marks_endpoint_offline(self):
         with self.app.app_context():

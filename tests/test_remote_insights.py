@@ -82,6 +82,32 @@ class RemoteInsightRouteTests(unittest.TestCase):
             self.assertEqual(stored['example:latest']['critical'], 1)
             self.assertEqual(get_stored_vulnerabilities(), {})
 
+    def test_container_detail_scan_uses_owning_agent_and_persists_result(self):
+        scan = {
+            'image': 'example:latest',
+            'success': True,
+            'scanner': 'trivy',
+            'vulnerabilities': [],
+            'summary': {
+                'critical': 0, 'high': 1, 'medium': 0,
+                'low': 0, 'unknown': 0, 'total': 1,
+            },
+            'error': None,
+        }
+        with patch('routes.vulnerabilities.fleet_container_detail', return_value={
+            'id': 'abc123', 'name': 'web', 'image': 'example:latest',
+        }), patch('routes.vulnerabilities.scan_endpoint_images', return_value=scan):
+            response = self.client.post(
+                f'/api/vulnerabilities/scan-container/abc123?endpoint_id={self.endpoint_id}',
+                json={'force': True},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()['success'])
+        with self.app.app_context():
+            stored = get_stored_vulnerabilities(endpoint_id=self.endpoint_id)
+            self.assertEqual(stored['example:latest']['high'], 1)
+
 
 if __name__ == '__main__':
     unittest.main()

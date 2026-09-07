@@ -111,6 +111,42 @@ class ProjectJobTests(unittest.TestCase):
         self.assertIn('Expecting property name', failed.error)
         self.assertEqual(claim_next_job(), waiting.id)
 
+    def test_update_job_uses_constrained_recreate_and_refreshes_evidence(self):
+        job = queue_project_action(
+            self.app, self.project, 'update', 'tester',
+            options={'services': ['web']},
+        )
+        self.assertEqual(claim_next_job(), job.id)
+
+        class FakeClient:
+            payload = None
+
+            def post(self, _path, json=None, timeout=None):
+                self.payload = json
+                return {
+                    'state': {
+                        'config_digest': 'after',
+                        'images': {'web': {'image': 'example/web:latest'}},
+                    },
+                    'output': 'redeployed',
+                }
+
+        fake_client = FakeClient()
+        with patch('services.project_service.project_state', return_value={
+            'config_digest': 'before', 'images': {},
+        }), patch('services.project_service._client', return_value=fake_client), patch(
+            'services.project_service._refresh_image_insights',
+            return_value='evidence refreshed',
+        ) as refresh:
+            self.assertTrue(run_claimed_job(job.id))
+
+        completed = db.session.get(OperationJob, job.id)
+        self.assertEqual(fake_client.payload['action'], 'recreate')
+        self.assertEqual(fake_client.payload['services'], ['web'])
+        refresh.assert_called_once()
+        self.assertIn('evidence refreshed', completed.output)
+        self.assertEqual(completed.status, 'succeeded')
+
     def test_job_rejects_project_endpoint_mismatch(self):
         other_endpoint = Endpoint(name='other', kind='agent', url='https://other:9002')
         db.session.add(other_endpoint)

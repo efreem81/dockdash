@@ -83,6 +83,21 @@ class ProjectRouteIsolationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 202)
         self.assertEqual(response.get_json()['job']['endpoint_id'], self.first_id)
 
+    def test_update_action_accepts_only_service_selection(self):
+        response = self.client.post(
+            f'/api/projects/{self.project_id}/action',
+            json={
+                'action': 'update',
+                'endpoint_id': self.first_id,
+                'services': ['web'],
+            },
+        )
+        self.assertEqual(response.status_code, 202)
+        with self.app.app_context():
+            job = db.session.get(OperationJob, response.get_json()['job']['id'])
+            self.assertEqual(job.action, 'update')
+            self.assertEqual(job.request_json, '{"services": ["web"]}')
+
 
 if __name__ == '__main__':
     unittest.main()

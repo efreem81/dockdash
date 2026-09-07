@@ -9,9 +9,10 @@
     <button class="btn btn-primary" onclick="showDeployModal()">New deployment</button>
   </div>
 </div>
+{% if focused_project_id %}<div class="alert alert-info">Opened from a container. The owning Compose project is highlighted below; updates preserve the project definition and volumes.</div>{% endif %}
 <div class="project-grid">
 {% for project in projects %}
-  <article class="settings-section project-card" data-id="{{ project.id }}">
+  <article class="settings-section project-card{% if project.id == focused_project_id %} project-card-focused{% endif %}" data-id="{{ project.id }}" id="project-{{ project.id }}">
     <div class="section-header"><div><h2>{{ project.name }}</h2><p>{{ project.source_type }} · {{ project.working_dir }}</p></div><span class="status-badge">{{ project.source_type }}</span></div>
     <div class="project-settings">
       <label>Required mounts <input class="required-mounts" value="{{ project.required_mounts|join(', ') }}" placeholder="/mnt/BigNAS, /mnt/media"></label>
@@ -26,7 +27,8 @@
       <button class="btn btn-danger" onclick="projectAction({{ project.id }}, 'stop')">Stop</button>
       <button class="btn btn-secondary" onclick="projectAction({{ project.id }}, 'pull')">Pull</button>
       {% if project.source_type == 'git' %}<button class="btn btn-secondary" onclick="refreshGit({{ project.id }})">Update Git</button>{% endif %}
-      <button class="btn btn-primary" onclick="projectAction({{ project.id }}, 'up')">Pull & deploy</button>
+      <button class="btn btn-primary" onclick="projectAction({{ project.id }}, 'update')">Update running services</button>
+      <button class="btn btn-secondary" onclick="projectAction({{ project.id }}, 'up')">Deploy changes</button>
       <button class="btn btn-secondary" onclick="showProjectDetails({{ project.id }})">History</button>
     </div>
     <pre class="job-output" style="display:none"></pre>

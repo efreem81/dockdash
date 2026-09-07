@@ -6,7 +6,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, jsonif
 from flask_login import login_required, current_user
 from datetime import datetime
 from services.docker_service import get_host_ip, get_docker_client
-from services.fleet_service import get_endpoint, list_containers
+from services.fleet_service import annotate_container_management, get_endpoint, list_containers
 from models import Endpoint
 from config import database_schema_errors
 
@@ -45,6 +45,12 @@ def dashboard():
                 show_all=show_all,
                 timeout=5 if all_hosts else None,
             )
+            # Keep mocked/legacy inventory and current agents on the same UI
+            # capability contract.
+            if endpoint_containers and 'management' not in endpoint_containers[0]:
+                endpoint_containers = annotate_container_management(
+                    selected_endpoint, endpoint_containers,
+                )
             available_endpoint_count += 1
         except Exception as exc:
             endpoint_containers = []

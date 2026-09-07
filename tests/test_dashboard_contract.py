@@ -90,6 +90,38 @@ class DashboardContractTests(unittest.TestCase):
         self.assertIn(b'sleeping-host', response.data)
         self.assertIn(b'1/2 reachable', response.data)
 
+    def test_remote_dashboard_only_advertises_supported_update_workflows(self):
+        from models import ComposeProject
+
+        with self.app.app_context():
+            project = ComposeProject(
+                endpoint_id=self.endpoint_id,
+                name='example',
+                working_dir='/opt/example',
+            )
+            db.session.add(project)
+            db.session.commit()
+            project_id = project.id
+
+        client = self.app.test_client()
+        with client.session_transaction() as session:
+            session['_user_id'] = str(self.user_id)
+            session['_fresh'] = True
+            session['endpoint_id'] = self.endpoint_id
+
+        inventory = [{
+            'id': 'abc123', 'name': 'web', 'status': 'running',
+            'image': 'example/web:latest', 'created': '2026-09-07 10:00:00',
+            'compose_project': 'example', 'compose_service': 'web', 'ports': [],
+        }]
+        with patch('routes.dashboard.list_containers', return_value=inventory):
+            response = client.get('/dashboard')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(f'data-project-id="{project_id}"'.encode(), response.data)
+        self.assertIn(b'Update services', response.data)
+        self.assertNotIn(b'Deploy via Projects', response.data)
+
 
 if __name__ == '__main__':
     unittest.main()

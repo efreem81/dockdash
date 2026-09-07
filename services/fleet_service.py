@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 from flask import request, session
 
 from config import db
-from models import Endpoint
+from models import ComposeProject, Endpoint
 from services.agent_client import AgentClient, AgentError
 from services import docker_service, image_service
 
@@ -117,6 +117,54 @@ def normalize_container(endpoint, container):
     return item
 
 
+def annotate_container_management(endpoint, containers):
+    """Attach UI capabilities and Compose ownership to normalized containers.
+
+    The agent deliberately exposes a smaller mutation surface than a raw Docker
+    socket.  Keeping these capabilities in the API response prevents the UI
+    from advertising actions that cannot be completed safely on that endpoint.
+    """
+    projects = {
+        project.name: project
+        for project in ComposeProject.query.filter_by(endpoint_id=endpoint.id).all()
+    }
+    annotated = []
+    for source in containers:
+        item = normalize_container(endpoint, source)
+        project_name = item.get('compose_project') or ''
+        service = item.get('compose_service') or ''
+        project = projects.get(project_name)
+        compose_managed = bool(project and service)
+        running = item.get('status') == 'running'
+
+        if compose_managed:
+            mode = 'compose'
+            update_reason = None if running else 'Start the service before updating it.'
+        elif project_name:
+            mode = 'unadopted-compose'
+            update_reason = 'Discover and adopt the owning Compose project first.'
+        else:
+            mode = 'standalone'
+            update_reason = (
+                None if endpoint.kind == 'local'
+                else 'Adopt this workload into Compose for safe remote updates.'
+            )
+
+        item['management'] = {
+            'mode': mode,
+            'project_id': project.id if project else None,
+            'project_name': project_name or None,
+            'service': service or None,
+            'can_update': bool((compose_managed and running) or endpoint.kind == 'local'),
+            'update_reason': update_reason,
+            'can_remove': not compose_managed,
+            'can_exec': bool(endpoint.kind == 'local' and running),
+            'can_stats': running,
+        }
+        annotated.append(item)
+    return annotated
+
+
 def endpoint_health(endpoint, timeout=None):
     try:
         if endpoint.kind == 'local':
@@ -158,7 +206,7 @@ def list_containers(endpoint, show_all=False, timeout=None):
         except Exception as exc:
             mark_failure(endpoint, exc)
             raise
-    return [normalize_container(endpoint, container) for container in containers]
+    return annotate_container_management(endpoint, containers)
 
 
 def container_detail(endpoint, container_id):
@@ -167,7 +215,7 @@ def container_detail(endpoint, container_id):
         container = docker_service.get_container_info(client.containers.get(container_id))
     else:
         container = _agent(endpoint).get(f'/v1/containers/{container_id}').get('container')
-    return normalize_container(endpoint, container)
+    return annotate_container_management(endpoint, [container])[0]
 
 
 def container_stats(endpoint, container_id):
